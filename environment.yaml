@@ -1,0 +1,17 @@
+name: agent-hoy
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  # - flac  # FLAC is required for Google Speech Recognition but installation not working on Windows
+  - python=3.11
+  - pyaudio
+  - speechrecognition
+  - requests
+  - pip
+  - pip:
+    - pocketsphinx  # Install via pip since not available in conda-forge for Windows
+    - vosk
+    - openai-whisper  # High-quality offline speech recognition
+    - torch  # Required for Whisper
+    - torchaudio  # Audio processing for Whisper

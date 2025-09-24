@@ -1,0 +1,22 @@
+# Python 3.9-3.12 recommended (Python 3.13 may have compatibility issues)
+# Core speech recognition dependencies
+SpeechRecognition>=3.10.0
+
+# Audio dependencies - install system libraries first!
+# On Ubuntu/Debian: sudo apt-get install portaudio19-dev python3-pyaudio
+# On CentOS/RHEL: sudo yum install portaudio-devel
+# On macOS: brew install portaudio
+# On Windows: PyAudio should install automatically
+PyAudio>=0.2.11
+
+# Network and HTTP requests
+requests>=2.25.0
+
+# Offline speech recognition (recommended for offline capabilities)
+vosk>=0.3.45
+pocketsphinx>=5.0.0
+
+# Advanced offline options (uncomment if needed for Whisper support)
+# whisper>=1.0.0
+# torch>=1.9.0
+# torchaudio>=0.9.0
