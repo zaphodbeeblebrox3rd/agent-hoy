@@ -121,28 +121,87 @@ class OpenAIAnalyzer:
         return round(total_cost, 6)  # Round to 6 decimal places
     
     def generate_topic_analysis(self, category: str, explanation: Dict[str, str]) -> tuple[str, float]:
-        """Generate AI analysis for a topic"""
+        """Generate AI analysis for a topic with adaptive question type support"""
         if not self.is_available():
             return self._get_fallback_topic_analysis(category, explanation), 0.0
         
-        prompt = f"""
-        Analyze the following technical topic and provide enhanced insights:
+        # Get question type from explanation if available
+        question_type = explanation.get('question_type', 'troubleshooting')
+        print(f"DEBUG: OpenAI prompt generation - category: '{category}', question_type: '{question_type}'")
         
-        Topic: {explanation.get('title', category)}
-        Summary: {explanation.get('summary', '')}
-        Challenges: {explanation.get('challenges', '')}
-        Commands: {explanation.get('commands', '')}
+        # Create adaptive prompt based on question type
+        if question_type == 'architecture':
+            prompt = f"""
+            You are a system architect. Analyze the following technical topic and provide architectural guidance:
+            
+            Topic: {explanation.get('title', category)}
+            Summary: {explanation.get('summary', '')}
+            Challenges: {explanation.get('challenges', '')}
+            Commands: {explanation.get('commands', '')}
+            
+            User Question: {explanation.get('context', '')}
+            
+            Please provide architectural guidance focusing on:
+            1. System architecture patterns and design principles
+            2. Scalability and performance design strategies
+            3. Component interaction and service boundaries
+            4. Technology stack and tool recommendations
+            5. Integration patterns and best practices
+            6. Security architecture considerations
+            7. Deployment and infrastructure patterns
+            8. Fault tolerance and resilience patterns
+            9. High availability and disaster recovery
+            10. Compliance and regulatory considerations
+            
+            Format the response with clear architectural sections and design recommendations.
+            """
+        elif question_type == 'security':
+            prompt = f"""
+            You are a security expert. Analyze the following technical topic and provide security guidance:
+            
+            Topic: {explanation.get('title', category)}
+            Summary: {explanation.get('summary', '')}
+            Challenges: {explanation.get('challenges', '')}
+            Commands: {explanation.get('commands', '')}
+            
+            User Question: {explanation.get('context', '')}
+            
+            Please provide security guidance focusing on:
+            1. Security architecture and design principles
+            2. Threat modeling and risk assessment
+            3. Access control and authentication strategies
+            4. Data protection and encryption
+            5. Network security considerations
+            6. Compliance and regulatory requirements
+            7. Security monitoring and incident response
+            8. Vulnerability management
+            9. Security testing and validation
+            10. Security best practices and standards
+            
+            Format the response with clear security sections and actionable recommendations.
+            """
+        else:  # Default to troubleshooting
+            prompt = f"""
+            Analyze the following technical topic and provide enhanced troubleshooting insights:
+            
+            Topic: {explanation.get('title', category)}
+            Summary: {explanation.get('summary', '')}
+            Challenges: {explanation.get('challenges', '')}
+            Commands: {explanation.get('commands', '')}
+            
+            User Question: {explanation.get('context', '')}
+            
+            Please provide:
+            1. Advanced insights and best practices
+            2. Performance optimization strategies
+            3. Common pitfalls and how to avoid them
+            4. Recommended tools and monitoring approaches
+            5. Next steps for implementation
+            
+            Format the response with clear sections and actionable advice.
+            """
         
-        Please provide:
-        1. Advanced insights and best practices
-        2. Performance optimization strategies
-        3. Common pitfalls and how to avoid them
-        4. Recommended tools and monitoring approaches
-        5. Next steps for implementation
-        
-        Format the response with clear sections and actionable advice.
-        """
-        
+        print(f"DEBUG: Using {question_type} prompt for OpenAI API call")
         return self._make_api_call(prompt, f"topic:{category}")
     
     def generate_troubleshooting_analysis(self, question: str, suggestions: Dict[str, str]) -> tuple[str, float]:

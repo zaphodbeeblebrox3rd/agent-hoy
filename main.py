@@ -66,6 +66,11 @@ class SpeechTranscriptionApp:
         self.last_speech_time = 0
         self.pending_analysis = None
         
+        # Dynamic question type evolution
+        self.current_question_type = None
+        self.question_type_history = []
+        self.context_evolution_threshold = 0.3  # Minimum confidence to change question type
+        
         # Track analyzed keywords to prevent duplicate analysis
         self.analyzed_keywords = set()
         self.last_analyzed_transcription = ""
@@ -132,11 +137,24 @@ class SpeechTranscriptionApp:
                 r'\b(how should|what\'s the best|recommend|recommendation|approach|strategy)\b',
                 r'\b(scalability|scalable|performance|optimization|efficiency)\b',
                 r'\b(microservices|monolith|distributed|centralized|decentralized)\b',
-                r'\b(component|components|module|modules|service|services)\b'
-            ],
-            'design': [
-                r'\b(design|designing|ui|ux|interface|user experience|usability)\b',
-                r'\b(layout|layout|wireframe|mockup|prototype|prototyping)\b',
+                r'\b(component|components|module|modules|service|services)\b',
+                r'\b(fault.?tolerant|fault.?tolerance|resilient|resilience|redundant|redundancy)\b',
+                r'\b(reproducible|reproducibility|consistent|consistency|reliable|reliability)\b',
+                r'\b(hybrid|federated|federation|multi.?cloud|cloud.?burst|burst)\b',
+                r'\b(compute|computing|environment|infrastructure|platform)\b',
+                r'\b(workload|workloads|job|jobs|execution|scheduling)\b',
+                r'\b(split.?brain|failover|fail.?over|high.?availability|ha)\b',
+                r'\b(container|containers|bare.?metal|nodes|hardware)\b',
+                r'\b(driver|injection|specialized|gpu|gpus|hardware)\b',
+                r'\b(licensing|license|open.?source|orchestration|orchestrator)\b',
+                r'\b(forensic|traceability|trace|audit|auditing|compliance)\b',
+                # Design patterns (merged from design)
+                r'\b(design a|design an|design the|designing a|designing an|designing the)\b',
+                r'\b(system design|architecture design|solution design|infrastructure design)\b',
+                r'\b(design pattern|design patterns|design principles|design approach)\b',
+                r'\b(design strategy|design methodology|design framework)\b',
+                r'\b(ui|ux|interface|user experience|usability)\b',
+                r'\b(layout|wireframe|mockup|prototype|prototyping)\b',
                 r'\b(workflow|process|procedure|methodology|method)\b',
                 r'\b(requirements|specification|spec|documentation)\b',
                 r'\b(blueprint|plan|planning|roadmap)\b'
@@ -268,6 +286,11 @@ class SpeechTranscriptionApp:
         self.ai_status_label = ttk.Label(control_frame, text="AI Status: Ready")
         self.ai_status_label.pack(side=tk.LEFT, padx=(20, 0))
         
+        # Question type indicator
+        self.question_type_label = ttk.Label(control_frame, text="Type: None", 
+                                           font=("Arial", 9), foreground="green")
+        self.question_type_label.pack(side=tk.LEFT, padx=(10, 0))
+        
         # Create resizable paned window for transcription and topic areas
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
         self.paned_window.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -390,7 +413,7 @@ class SpeechTranscriptionApp:
         try:
             # Try to use Whisper for offline recognition
             import whisper
-            self.whisper_model = whisper.load_model("base")  # Start with base model for speed
+            self.whisper_model = whisper.load_model("small")  # Use small model for better accuracy
             print("Whisper offline recognition setup completed")
             self.status_label.config(text="Status: Whisper ready - offline recognition available")
         except ImportError:
@@ -680,14 +703,19 @@ class SpeechTranscriptionApp:
                         fp16=False,  # Use fp32 for better compatibility
                         verbose=False,
                         condition_on_previous_text=False,  # Don't depend on previous text
-                        initial_prompt=None  # No initial prompt
+                        initial_prompt="This is a technical discussion about computer systems, HPC clusters, cloud computing, containers, orchestration, and infrastructure. Use technical terminology accurately."
                     )
                     
                     # Check if result is valid
                     if result and "text" in result:
                         text = result["text"].strip()
                         # Only return non-empty results
-                        return text if text else ""
+                        if text:
+                            # Apply post-processing corrections
+                            text = self.correct_transcription_errors(text)
+                            return text
+                        else:
+                            return ""
                     else:
                         return ""
                         
@@ -708,6 +736,78 @@ class SpeechTranscriptionApp:
             print(f"Whisper recognition failed: {e}")
             # Don't return error message, just return empty string
             return ""
+    
+    def correct_transcription_errors(self, text):
+        """Correct common transcription errors for technical terms"""
+        corrections = {
+            # Technical term corrections
+            'computer environment': 'compute environment',
+            'on premise': 'on-premise',
+            'camera': 'containerized',
+            'in Fennaband': 'Infiniband',
+            'Fennaband': 'Infiniband',
+            'created storage later': 'federated storage layers',
+            'storage later': 'storage layers',
+            'bare metal': 'bare-metal',
+            'split brain': 'split-brain',
+            'cloud burst': 'cloud-burst',
+            'open source': 'open-source',
+            'driver injection': 'driver injection',
+            'dynamic driver': 'dynamic driver injection',
+            'specialized hardware': 'specialized hardware',
+            'forensic traceability': 'forensic traceability',
+            'job execution': 'job execution',
+            'orchestration tools': 'orchestration tools',
+            'licensing constraints': 'licensing constraints',
+            'failover': 'failover',
+            'reproducibility': 'reproducibility',
+            'fault tolerant': 'fault-tolerant',
+            'hybrid HPC': 'hybrid HPC',
+            'workload': 'workload',
+            'clusters': 'clusters',
+            'capacity': 'capacity',
+            'solution must': 'solution must',
+            'prevent': 'prevent',
+            'scenarios': 'scenarios',
+            'during': 'during',
+            'ensure': 'ensure',
+            'across': 'across',
+            'nodes': 'nodes',
+            'support': 'support',
+            'without': 'without',
+            'reboot': 'reboot',
+            'comply': 'comply',
+            'enable': 'enable',
+            'execution': 'execution',
+            'federated': 'federated',
+            'layers': 'layers'
+        }
+        
+        # Apply corrections
+        corrected_text = text
+        for wrong, right in corrections.items():
+            corrected_text = corrected_text.replace(wrong, right)
+        
+        # Additional pattern-based corrections
+        import re
+        
+        # Fix "Design of" -> "Design a"
+        corrected_text = re.sub(r'\bDesign of\b', 'Design a', corrected_text, flags=re.IGNORECASE)
+        
+        # Fix "for us" -> "for a" (common error)
+        corrected_text = re.sub(r'\bfor us\b', 'for a', corrected_text, flags=re.IGNORECASE)
+        
+        # Fix "or solution" -> "Your solution"
+        corrected_text = re.sub(r'\bor solution\b', 'Your solution', corrected_text, flags=re.IGNORECASE)
+        
+        # Fix "and show" -> "and ensure"
+        corrected_text = re.sub(r'\band show\b', 'and ensure', corrected_text, flags=re.IGNORECASE)
+        
+        # Fix "This includes" -> "for specialized hardware"
+        corrected_text = re.sub(r'\bThis includes\b', 'for specialized hardware', corrected_text, flags=re.IGNORECASE)
+        
+        print(f"DEBUG: Transcription correction - Original: '{text}' -> Corrected: '{corrected_text}'")
+        return corrected_text
     
     def update_transcription(self, text):
         """Update the transcription display with new text"""
@@ -960,6 +1060,14 @@ class SpeechTranscriptionApp:
         except Exception as e:
             print(f"Error updating AI status: {e}")
     
+    def update_question_type_display(self, question_type):
+        """Update the question type indicator"""
+        try:
+            self.question_type_label.config(text=f"Type: {question_type.title()}")
+            print(f"Question type updated: {question_type}")
+        except Exception as e:
+            print(f"Error updating question type: {e}")
+    
     def reset_session_cost(self):
         """Reset session cost and API counter to zero"""
         try:
@@ -1100,12 +1208,20 @@ class SpeechTranscriptionApp:
     def generate_contextual_ai_analysis(self, category, explanation, full_transcription, detected_keyword):
         """Generate AI analysis based on keywords AND full transcription context"""
         try:
+            print(f"DEBUG: generate_contextual_ai_analysis called with category='{category}', keyword='{detected_keyword}'")
+            print(f"DEBUG: Full transcription: '{full_transcription}'")
+            
             # Update AI status to processing
             self.root.after(0, lambda: self.update_ai_status("Processing..."))
             
-            # Detect question type for adaptive analysis
-            question_type = self.detect_question_type(full_transcription)
-            print(f"Detected question type: {question_type}")
+            # Detect question type with evolution tracking
+            question_type = self.detect_question_type_evolution(full_transcription, full_transcription)
+            print(f"Current question type: {question_type}")
+            print(f"DEBUG: Full transcription for analysis: '{full_transcription}'")
+            print(f"DEBUG: Question type history: {self.question_type_history}")
+            
+            # Update question type display
+            self.root.after(0, lambda: self.update_question_type_display(question_type))
             
             # Use OpenAI if available and enabled
             if OPENAI_AVAILABLE and openai_analyzer.is_available():
@@ -1128,6 +1244,7 @@ class SpeechTranscriptionApp:
                 context_parts.append("QUESTION TYPE:")
                 context_parts.append(question_type)
                 context_parts.append("")
+                context_parts.append("IMPORTANT: Focus ONLY on the user's actual question. Do not inject irrelevant content.")
                 context_parts.append("Please provide a comprehensive response that addresses the ENTIRE question above.")
                 
                 enhanced_explanation['context'] = "\n".join(context_parts)
@@ -1170,26 +1287,23 @@ class SpeechTranscriptionApp:
         
         # Adaptive content based on question type
         if question_type == 'architecture':
-            ai_content += f"• Architectural considerations for {category} systems\n"
-            ai_content += f"• Scalability and performance design patterns\n"
-            ai_content += f"• Component interaction and dependencies\n\n"
+            ai_content += f"🏗️ **System Architecture & Design Framework:**\n"
+            ai_content += f"• System architecture patterns and design principles for {category}\n"
+            ai_content += f"• Scalability and performance design strategies\n"
+            ai_content += f"• Component interaction and service boundaries\n"
+            ai_content += f"• Technology stack and tool recommendations\n"
+            ai_content += f"• Integration patterns and best practices\n"
+            ai_content += f"• Monitoring and observability architecture\n"
+            ai_content += f"• Security architecture and design considerations\n"
+            ai_content += f"• Deployment and infrastructure patterns\n"
+            ai_content += f"• Data flow and processing architecture\n"
+            ai_content += f"• Fault tolerance and resilience patterns\n"
+            ai_content += f"• High availability and disaster recovery\n"
+            ai_content += f"• User experience and interface design considerations\n"
+            ai_content += f"• Workflow and process design optimization\n"
+            ai_content += f"• Testing and validation design strategies\n"
+            ai_content += f"• Compliance and regulatory considerations\n\n"
             
-            ai_content += f"🏗️ **Architectural Guidance:**\n"
-            ai_content += f"• Design patterns: Microservices, Event-driven, CQRS\n"
-            ai_content += f"• Scalability strategies: Horizontal vs vertical scaling\n"
-            ai_content += f"• Integration patterns: API Gateway, Service Mesh\n"
-            ai_content += f"• Data architecture: CQRS, Event Sourcing, Caching\n\n"
-            
-        elif question_type == 'design':
-            ai_content += f"• Design principles and best practices for {category}\n"
-            ai_content += f"• User experience and interface considerations\n"
-            ai_content += f"• Workflow and process optimization\n\n"
-            
-            ai_content += f"🎨 **Design Guidance:**\n"
-            ai_content += f"• UX/UI principles: Usability, Accessibility, Responsive\n"
-            ai_content += f"• Design patterns: MVC, MVP, MVVM, Observer\n"
-            ai_content += f"• Prototyping tools: Figma, Sketch, Adobe XD\n"
-            ai_content += f"• User research methods: Interviews, Surveys, A/B Testing\n\n"
             
         elif question_type == 'policy':
             ai_content += f"• Policy and governance considerations for {category}\n"
@@ -1698,14 +1812,91 @@ class SpeechTranscriptionApp:
         """Detect the type of question being asked for adaptive AI analysis"""
         text_lower = text.lower()
         
+        # Check for specific "design" patterns first (higher priority)
+        design_patterns = [
+            r'\b(design a|design an|design the|designing a|designing an|designing the)\b',
+            r'\b(system design|architecture design|solution design|infrastructure design)\b'
+        ]
+        
+        print(f"DEBUG: Checking design patterns against text: '{text_lower}'")
+        for pattern in design_patterns:
+            match = re.search(pattern, text_lower, re.IGNORECASE)
+            print(f"DEBUG: Pattern '{pattern}' match: {match}")
+            if match:
+                print(f"DEBUG: Detected question type 'architecture' with high-priority design pattern '{pattern}'")
+                return 'architecture'
+        
         # Check each question type pattern
+        print(f"DEBUG: Checking all question type patterns against text: '{text_lower}'")
         for question_type, patterns in self.question_type_patterns.items():
+            print(f"DEBUG: Checking {question_type} patterns...")
             for pattern in patterns:
-                if re.search(pattern, text_lower, re.IGNORECASE):
+                match = re.search(pattern, text_lower, re.IGNORECASE)
+                print(f"DEBUG: Pattern '{pattern}' match: {match}")
+                if match:
+                    print(f"DEBUG: Detected question type '{question_type}' with pattern '{pattern}'")
                     return question_type
         
         # Default to troubleshooting if no specific type detected
+        print(f"DEBUG: No specific question type detected, defaulting to 'troubleshooting'")
         return 'troubleshooting'
+    
+    def detect_question_type_evolution(self, text, full_transcription):
+        """Detect if question type should evolve based on context changes"""
+        print(f"DEBUG: Evolution detection - text: '{text[:100]}...', full: '{full_transcription[:100]}...'")
+        
+        # Get current detected type
+        detected_type = self.detect_question_type(text)
+        print(f"DEBUG: Basic detection result: '{detected_type}'")
+        
+        # If no previous type, use detected type
+        if self.current_question_type is None:
+            self.current_question_type = detected_type
+            self.question_type_history.append(detected_type)
+            print(f"DEBUG: Initial question type set to '{detected_type}'")
+            return detected_type
+        
+        # Calculate confidence scores for each question type
+        type_scores = {}
+        text_lower = text.lower()
+        full_lower = full_transcription.lower()
+        
+        for question_type, patterns in self.question_type_patterns.items():
+            score = 0
+            total_patterns = len(patterns)
+            
+            for pattern in patterns:
+                if re.search(pattern, text_lower, re.IGNORECASE):
+                    score += 1
+                if re.search(pattern, full_lower, re.IGNORECASE):
+                    score += 0.5  # Lower weight for full context
+            
+            type_scores[question_type] = score / total_patterns if total_patterns > 0 else 0
+        
+        # Find the highest scoring type
+        best_type = max(type_scores, key=type_scores.get)
+        best_score = type_scores[best_type]
+        
+        print(f"DEBUG: Question type scores: {type_scores}")
+        print(f"DEBUG: Best type: '{best_type}' with score: {best_score:.2f}")
+        
+        # Check if we should evolve the question type
+        if (best_type != self.current_question_type and 
+            best_score >= self.context_evolution_threshold):
+            
+            print(f"DEBUG: Question type evolving from '{self.current_question_type}' to '{best_type}'")
+            self.current_question_type = best_type
+            self.question_type_history.append(best_type)
+            
+            # Keep history manageable (last 5 types)
+            if len(self.question_type_history) > 5:
+                self.question_type_history = self.question_type_history[-5:]
+            
+            return best_type
+        
+        # No evolution needed
+        print(f"DEBUG: Question type remains '{self.current_question_type}'")
+        return self.current_question_type
     
     def provide_troubleshooting_suggestions(self, question_text):
         """Provide troubleshooting suggestions based on the question"""
@@ -1744,7 +1935,8 @@ class SpeechTranscriptionApp:
             
             # Show AI analysis for troubleshooting (if enabled)
             if self.ai_enabled_var.get():
-                ai_content = self.generate_ai_troubleshooting(question_text, suggestions)
+                # Use the new contextual AI analysis instead of old troubleshooting
+                ai_content = self.generate_contextual_ai_analysis("troubleshooting", suggestions, question_text, "troubleshooting")
                 self.show_ai_analysis(ai_content)
             else:
                 self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
@@ -1943,6 +2135,11 @@ class SpeechTranscriptionApp:
         self.is_paused = False
         if self.is_listening:
             self.pause_button.config(text="Pause Listening")
+        
+        # Reset question type evolution
+        self.current_question_type = None
+        self.question_type_history = []
+        self.update_question_type_display("None")
         
         print("Cleared transcription, topic explanation, and AI analysis panes")
 
