@@ -71,6 +71,9 @@ class SpeechTranscriptionApp:
         self.question_type_history = []
         self.context_evolution_threshold = 0.3  # Minimum confidence to change question type
         
+        # Load transcription corrections from config file
+        self.transcription_corrections = self.load_transcription_corrections()
+        
         # Track analyzed keywords to prevent duplicate analysis
         self.analyzed_keywords = set()
         self.last_analyzed_transcription = ""
@@ -738,9 +741,58 @@ class SpeechTranscriptionApp:
             return ""
     
     def correct_transcription_errors(self, text):
-        """Correct common transcription errors for technical terms"""
-        corrections = {
-            # Technical term corrections
+        """Correct common transcription errors for technical terms using config file"""
+        corrected_text = text
+        
+        # Apply corrections from config file
+        for wrong, right in self.transcription_corrections.items():
+            corrected_text = corrected_text.replace(wrong, right)
+        
+        print(f"DEBUG: Transcription correction - Original: '{text}' -> Corrected: '{corrected_text}'")
+        return corrected_text
+    
+    def load_transcription_corrections(self):
+        """Load transcription corrections from corrections.conf file"""
+        corrections = {}
+        config_file = "corrections.conf"
+        
+        try:
+            if os.path.exists(config_file):
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    for line_num, line in enumerate(f, 1):
+                        line = line.strip()
+                        
+                        # Skip empty lines and comments
+                        if not line or line.startswith('#'):
+                            continue
+                        
+                        # Parse correction pairs (original = corrected)
+                        if '=' in line:
+                            parts = line.split('=', 1)
+                            if len(parts) == 2:
+                                original = parts[0].strip()
+                                corrected = parts[1].strip()
+                                corrections[original] = corrected
+                            else:
+                                print(f"Warning: Invalid correction format in {config_file} line {line_num}: {line}")
+                        else:
+                            print(f"Warning: Invalid correction format in {config_file} line {line_num}: {line}")
+                
+                print(f"Loaded {len(corrections)} transcription corrections from {config_file}")
+            else:
+                print(f"Corrections config file {config_file} not found, using default corrections")
+                # Fallback to hardcoded corrections if config file doesn't exist
+                corrections = self.get_default_corrections()
+                
+        except Exception as e:
+            print(f"Error loading corrections from {config_file}: {e}")
+            corrections = self.get_default_corrections()
+        
+        return corrections
+    
+    def get_default_corrections(self):
+        """Get default transcription corrections as fallback"""
+        return {
             'computer environment': 'compute environment',
             'on premise': 'on-premise',
             'camera': 'containerized',
@@ -752,62 +804,13 @@ class SpeechTranscriptionApp:
             'split brain': 'split-brain',
             'cloud burst': 'cloud-burst',
             'open source': 'open-source',
-            'driver injection': 'driver injection',
-            'dynamic driver': 'dynamic driver injection',
-            'specialized hardware': 'specialized hardware',
-            'forensic traceability': 'forensic traceability',
-            'job execution': 'job execution',
-            'orchestration tools': 'orchestration tools',
-            'licensing constraints': 'licensing constraints',
-            'failover': 'failover',
-            'reproducibility': 'reproducibility',
             'fault tolerant': 'fault-tolerant',
-            'hybrid HPC': 'hybrid HPC',
-            'workload': 'workload',
-            'clusters': 'clusters',
-            'capacity': 'capacity',
-            'solution must': 'solution must',
-            'prevent': 'prevent',
-            'scenarios': 'scenarios',
-            'during': 'during',
-            'ensure': 'ensure',
-            'across': 'across',
-            'nodes': 'nodes',
-            'support': 'support',
-            'without': 'without',
-            'reboot': 'reboot',
-            'comply': 'comply',
-            'enable': 'enable',
-            'execution': 'execution',
-            'federated': 'federated',
-            'layers': 'layers'
+            'Design of': 'Design a',
+            'for us': 'for a',
+            'or solution': 'Your solution',
+            'and show': 'and ensure',
+            'This includes': 'for specialized hardware'
         }
-        
-        # Apply corrections
-        corrected_text = text
-        for wrong, right in corrections.items():
-            corrected_text = corrected_text.replace(wrong, right)
-        
-        # Additional pattern-based corrections
-        import re
-        
-        # Fix "Design of" -> "Design a"
-        corrected_text = re.sub(r'\bDesign of\b', 'Design a', corrected_text, flags=re.IGNORECASE)
-        
-        # Fix "for us" -> "for a" (common error)
-        corrected_text = re.sub(r'\bfor us\b', 'for a', corrected_text, flags=re.IGNORECASE)
-        
-        # Fix "or solution" -> "Your solution"
-        corrected_text = re.sub(r'\bor solution\b', 'Your solution', corrected_text, flags=re.IGNORECASE)
-        
-        # Fix "and show" -> "and ensure"
-        corrected_text = re.sub(r'\band show\b', 'and ensure', corrected_text, flags=re.IGNORECASE)
-        
-        # Fix "This includes" -> "for specialized hardware"
-        corrected_text = re.sub(r'\bThis includes\b', 'for specialized hardware', corrected_text, flags=re.IGNORECASE)
-        
-        print(f"DEBUG: Transcription correction - Original: '{text}' -> Corrected: '{corrected_text}'")
-        return corrected_text
     
     def update_transcription(self, text):
         """Update the transcription display with new text"""

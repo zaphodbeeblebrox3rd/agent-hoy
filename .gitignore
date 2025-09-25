@@ -1,6 +1,7 @@
 # Project-specific files
 cache/
 openai_key.txt
+corrections.conf
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

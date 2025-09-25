@@ -9,6 +9,9 @@ A Python application that provides real-time speech transcription with interacti
 - **Topic Explanations**: Get summaries, technical challenges, and command examples for various tech topics
 - **Modern GUI**: Clean, responsive interface built with tkinter
 - **Keyword Categories**: Covers Python, Docker, AWS, Linux, Git, Databases, Networking, Security, Monitoring, CI/CD, HFT, HPC, Network Storage, Performance, Slurm, PBS/Torque, Computational Jobs, Programming, C, JavaScript, Ruby, Shell Scripting, Lua, and PowerShell
+- **AI-Enhanced Analysis**: OpenAI integration for contextual analysis and adaptive question type detection
+- **Transcription Corrections**: Configurable post-processing corrections for common speech-to-text errors
+- **Dynamic Question Types**: Intelligent detection of architecture, design, security, and troubleshooting questions
 
 ## Installation
 
@@ -107,6 +110,60 @@ The application automatically handles offline scenarios:
 - **Cached Content**: Previously viewed explanations are available offline
 - **Offline Recognition**: Falls back to local speech recognition when internet is unavailable
 - **Status Indication**: Shows "Offline mode" when using local recognition
+
+## Transcription Corrections
+
+The application includes configurable post-processing corrections to improve transcription accuracy for technical terms. Corrections are loaded from `corrections.conf` at startup.
+
+### Configuration File
+
+Create or edit `corrections.conf` to customize transcription corrections:
+
+```conf
+# Transcription Corrections Configuration
+# Format: original_text = corrected_text
+# Lines starting with # are comments
+
+# Technical term corrections
+computer environment = compute environment
+on premise = on-premise
+camera = containerized
+in Fennaband = Infiniband
+created storage later = federated storage layers
+bare metal = bare-metal
+split brain = split-brain
+cloud burst = cloud-burst
+open source = open-source
+fault tolerant = fault-tolerant
+
+# Common speech-to-text errors
+Design of = Design a
+for us = for a
+or solution = Your solution
+and show = and ensure
+This includes = for specialized hardware
+
+# Technical abbreviations
+HPC = HPC
+GPU = GPU
+API = API
+CLI = CLI
+Docker = Docker
+Kubernetes = Kubernetes
+AWS = AWS
+Azure = Azure
+```
+
+### Adding Custom Corrections
+
+1. **Edit the config file**: Open `corrections.conf` in a text editor
+2. **Add your corrections**: Use the format `original = corrected`
+3. **Restart the application**: Changes take effect on next startup
+4. **Test your corrections**: Speak the original text to verify corrections work
+
+### Default Corrections
+
+If `corrections.conf` is not found, the application uses built-in default corrections for common technical terms and speech-to-text errors.
 
 ## Supported Topics
 
