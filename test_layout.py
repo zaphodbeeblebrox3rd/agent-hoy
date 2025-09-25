@@ -39,6 +39,15 @@ def test_paned_window():
     ai_checkbox = ttk.Checkbutton(control_frame, text="Enable AI Analysis")
     ai_checkbox.pack(side=tk.LEFT, padx=(20, 0))
     
+    openai_status_label = ttk.Label(control_frame, text="OpenAI: Template Mode")
+    openai_status_label.pack(side=tk.LEFT, padx=(20, 0))
+    
+    cost_label = ttk.Label(control_frame, text="Session Cost: $0.00")
+    cost_label.pack(side=tk.LEFT, padx=(20, 0))
+    
+    cost_reset_button = ttk.Button(control_frame, text="Reset Cost")
+    cost_reset_button.pack(side=tk.LEFT, padx=(0, 10))
+    
     # Create vertical PanedWindow (transcription vs bottom)
     paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
     paned_window.pack(fill=tk.BOTH, expand=True)
@@ -122,13 +131,16 @@ def test_paned_window():
     print("1. Control bar with buttons and status labels")
     print("2. Audio Status: Default Microphone")
     print("3. Enable AI Analysis checkbox")
-    print("4. Top pane: Transcription area")
-    print("5. Bottom left: Topic explanation area")
-    print("6. Bottom right: AI-driven analysis area")
-    print("7. Vertical divider between top and bottom")
-    print("8. Horizontal divider between left and right bottom panes")
-    print("9. All panes are resizable by dragging dividers")
-    print("10. Scrollbars in all areas when needed")
+    print("4. OpenAI: Template Mode status")
+    print("5. Session Cost: $0.00 indicator")
+    print("6. Reset Cost button")
+    print("7. Top pane: Transcription area")
+    print("8. Bottom left: Topic explanation area")
+    print("9. Bottom right: AI-driven analysis area")
+    print("10. Vertical divider between top and bottom")
+    print("11. Horizontal divider between left and right bottom panes")
+    print("12. All panes are resizable by dragging dividers")
+    print("13. Scrollbars in all areas when needed")
     
     root.mainloop()
 

@@ -22,6 +22,15 @@ import requests
 import os
 from datetime import datetime, timedelta
 
+# OpenAI integration
+try:
+    from openai_integration import openai_analyzer
+    from openai_config import openai_config
+    OPENAI_AVAILABLE = True
+except ImportError:
+    print("OpenAI integration not available - using template fallback")
+    OPENAI_AVAILABLE = False
+
 class SpeechTranscriptionApp:
     def __init__(self, root):
         self.root = root
@@ -30,7 +39,7 @@ class SpeechTranscriptionApp:
         
         # Speech recognition setup
         self.recognizer = sr.Recognizer()
-        self.microphone = sr.Microphone()
+        self.microphone = None  # Initialize later in setup_speech_recognition
         self.is_listening = False
         self.audio_queue = queue.Queue()
         
@@ -46,6 +55,22 @@ class SpeechTranscriptionApp:
         # Audio validation settings
         self.audio_validation_enabled = True
         self.validation_failures = 0
+        
+        # AI analysis throttling
+        self.last_ai_analysis_time = 0
+        self.ai_analysis_throttle_seconds = 5  # Minimum 5 seconds between AI analyses
+        
+        # Track analyzed keywords to prevent duplicate analysis
+        self.analyzed_keywords = set()
+        self.last_analyzed_transcription = ""
+        
+        # AI analysis lock to prevent concurrent analysis
+        self.ai_analysis_lock = threading.Lock()
+        self.ai_analysis_running = False
+        
+        # Transcription buffer and queue for AI analysis
+        self.transcription_buffer = ""
+        self.pending_ai_analysis = False
         
         # Offline capabilities
         self.use_offline = False
@@ -126,9 +151,6 @@ class SpeechTranscriptionApp:
         self.setup_speech_recognition()
         self.setup_offline_recognition()
         
-        # Update audio status
-        self.update_audio_status()
-        
         # Bind audio status refresh to microphone changes
         self.root.bind("<FocusIn>", lambda e: self.update_audio_status())
         
@@ -156,6 +178,11 @@ class SpeechTranscriptionApp:
                                      command=self.clear_transcription)
         self.clear_button.pack(side=tk.LEFT, padx=(0, 10))
         
+        # Cost reset button
+        self.cost_reset_button = ttk.Button(control_frame, text="Reset Cost", 
+                                           command=self.reset_session_cost)
+        self.cost_reset_button.pack(side=tk.LEFT, padx=(0, 10))
+        
         self.status_label = ttk.Label(control_frame, text="Status: Ready")
         self.status_label.pack(side=tk.LEFT, padx=(20, 0))
         
@@ -172,6 +199,16 @@ class SpeechTranscriptionApp:
             command=self.on_ai_toggle
         )
         self.ai_checkbox.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # OpenAI status indicator
+        openai_status = "OpenAI: Configured" if (OPENAI_AVAILABLE and openai_analyzer.is_available()) else "OpenAI: Template Mode"
+        self.openai_status_label = ttk.Label(control_frame, text=openai_status)
+        self.openai_status_label.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # Cost tracking
+        self.session_cost = 0.0
+        self.cost_label = ttk.Label(control_frame, text="Session Cost: $0.00")
+        self.cost_label.pack(side=tk.LEFT, padx=(20, 0))
         
         # Create resizable paned window for transcription and topic areas
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
@@ -262,17 +299,31 @@ class SpeechTranscriptionApp:
     def setup_speech_recognition(self):
         """Initialize speech recognition with microphone"""
         try:
+            print("Initializing microphone...")
+            # Initialize microphone
+            self.microphone = sr.Microphone()
+            print("Microphone object created successfully")
+            
             # Optimize recognizer settings for better performance
             self.recognizer.energy_threshold = 300  # Lower threshold for better sensitivity
             self.recognizer.dynamic_energy_threshold = True  # Auto-adjust to ambient noise
             self.recognizer.pause_threshold = 0.8  # Shorter pause detection
             self.recognizer.phrase_threshold = 0.3  # Faster phrase detection
             self.recognizer.non_speaking_duration = 0.5  # Shorter non-speaking detection
+            print("Recognizer settings configured")
             
+            print("Adjusting for ambient noise...")
             with self.microphone as source:
                 self.recognizer.adjust_for_ambient_noise(source, duration=0.5)  # Faster calibration
+            print("Ambient noise adjustment completed")
+            
             self.status_label.config(text="Status: Microphone ready")
+            print("Microphone setup completed successfully")
+            
+            # Update audio status now that microphone is initialized
+            self.update_audio_status()
         except Exception as e:
+            print(f"Microphone setup failed: {e}")
             messagebox.showerror("Error", f"Failed to initialize microphone: {str(e)}")
             self.status_label.config(text="Status: Microphone error")
     
@@ -316,12 +367,15 @@ class SpeechTranscriptionApp:
     
     def listen_continuously(self):
         """Continuously listen for speech in a separate thread"""
+        print("Starting continuous listening...")
         while self.is_listening:
             try:
+                print("Listening for audio...")
                 with self.microphone as source:
                     # Listen for audio with timeout
                     audio = self.recognizer.listen(source, timeout=1, phrase_time_limit=5)
                 
+                print("Audio captured, processing...")
                 # Recognize speech in a separate thread to avoid blocking
                 recognition_thread = threading.Thread(
                     target=self.process_audio, 
@@ -336,6 +390,7 @@ class SpeechTranscriptionApp:
             except Exception as e:
                 print(f"Error in speech recognition: {e}")
                 time.sleep(0.1)
+        print("Stopped continuous listening")
     
     def check_network_connection(self):
         """Check if internet connection is available"""
@@ -577,6 +632,9 @@ class SpeechTranscriptionApp:
         if self.detect_question(text):
             self.provide_troubleshooting_suggestions(text)
         
+        # Check for keywords and trigger AI analysis automatically (throttled)
+        self.check_and_analyze_keywords_throttled(text)
+        
         # Highlight keywords
         self.highlight_keywords()
         
@@ -725,76 +783,357 @@ class SpeechTranscriptionApp:
             print(f"Error updating audio status: {e}")
             self.audio_status_label.config(text="Audio Status: Unknown")
     
+    def update_cost_display(self):
+        """Update the cost display in the UI"""
+        try:
+            self.cost_label.config(text=f"Session Cost: ${self.session_cost:.4f}")
+        except Exception as e:
+            print(f"Error updating cost display: {e}")
+    
+    def add_to_session_cost(self, cost):
+        """Add cost to session total and update display"""
+        try:
+            self.session_cost += cost
+            self.update_cost_display()
+            print(f"Added ${cost:.4f} to session cost. Total: ${self.session_cost:.4f}")
+        except Exception as e:
+            print(f"Error updating session cost: {e}")
+    
+    def reset_session_cost(self):
+        """Reset session cost to zero"""
+        try:
+            self.session_cost = 0.0
+            self.update_cost_display()
+            print("Session cost reset to $0.00")
+        except Exception as e:
+            print(f"Error resetting session cost: {e}")
+    
     def generate_ai_analysis(self, category, explanation):
         """Generate AI-driven analysis for a topic"""
         try:
-            # For now, generate enhanced analysis based on the topic
-            ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
-            ai_content += f"📊 **Advanced Insights:**\n"
-            ai_content += f"• This topic is commonly encountered in {category} environments\n"
-            ai_content += f"• Key performance indicators to monitor\n"
-            ai_content += f"• Best practices for optimization\n\n"
-            
-            ai_content += f"🔧 **Advanced Commands:**\n"
-            ai_content += f"• Performance monitoring: `htop`, `iostat`, `netstat`\n"
-            ai_content += f"• Debugging: `strace`, `gdb`, `valgrind`\n"
-            ai_content += f"• Log analysis: `grep`, `awk`, `sed`\n\n"
-            
-            ai_content += f"⚠️ **Common Pitfalls:**\n"
-            ai_content += f"• Memory leaks and resource management\n"
-            ai_content += f"• Security vulnerabilities to watch for\n"
-            ai_content += f"• Performance bottlenecks\n\n"
-            
-            ai_content += f"🚀 **Next Steps:**\n"
-            ai_content += f"• Consider implementing monitoring\n"
-            ai_content += f"• Review security best practices\n"
-            ai_content += f"• Plan for scalability\n\n"
-            
-            ai_content += f"💡 **AI Suggestion:**\n"
-            ai_content += f"Based on the topic '{category}', consider exploring related technologies "
-            ai_content += f"and implementing automated testing and monitoring solutions."
-            
-            return ai_content
+            # Use OpenAI if available and enabled
+            if OPENAI_AVAILABLE and openai_analyzer.is_available():
+                print(f"Using OpenAI for topic analysis: {category}")
+                ai_content, cost = openai_analyzer.generate_topic_analysis(category, explanation)
+                if cost > 0:
+                    # Schedule cost update on main thread to prevent hanging
+                    self.root.after(0, lambda: self.add_to_session_cost(cost))
+                return ai_content
+            else:
+                # Fallback to template-based analysis
+                print(f"Using template fallback for topic analysis: {category}")
+                return self._get_template_ai_analysis(category, explanation)
             
         except Exception as e:
+            print(f"AI analysis generation failed: {e}")
             return f"AI analysis generation failed: {e}"
+    
+    def _get_template_ai_analysis(self, category, explanation):
+        """Template-based AI analysis fallback"""
+        ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
+        ai_content += f"📊 **Advanced Insights:**\n"
+        ai_content += f"• This topic is commonly encountered in {category} environments\n"
+        ai_content += f"• Key performance indicators to monitor\n"
+        ai_content += f"• Best practices for optimization\n\n"
+        
+        ai_content += f"🔧 **Advanced Commands:**\n"
+        ai_content += f"• Performance monitoring: `htop`, `iostat`, `netstat`\n"
+        ai_content += f"• Debugging: `strace`, `gdb`, `valgrind`\n"
+        ai_content += f"• Log analysis: `grep`, `awk`, `sed`\n\n"
+        
+        ai_content += f"⚠️ **Common Pitfalls:**\n"
+        ai_content += f"• Memory leaks and resource management\n"
+        ai_content += f"• Security vulnerabilities to watch for\n"
+        ai_content += f"• Performance bottlenecks\n\n"
+        
+        ai_content += f"🚀 **Next Steps:**\n"
+        ai_content += f"• Consider implementing monitoring\n"
+        ai_content += f"• Review security best practices\n"
+        ai_content += f"• Plan for scalability\n\n"
+        
+        ai_content += f"💡 **AI Suggestion:**\n"
+        ai_content += f"Based on the topic '{category}', consider exploring related technologies "
+        ai_content += f"and implementing automated testing and monitoring solutions."
+        
+        return ai_content
     
     def generate_ai_troubleshooting(self, question_text, suggestions):
         """Generate AI-driven troubleshooting analysis"""
         try:
-            ai_content = f"🤖 AI Troubleshooting Analysis\n\n"
-            ai_content += f"📝 **Question Analysis:**\n"
-            ai_content += f"• Detected question type: Technical troubleshooting\n"
-            ai_content += f"• Complexity level: Intermediate to Advanced\n"
-            ai_content += f"• Context: {question_text[:100]}...\n\n"
-            
-            ai_content += f"🎯 **AI-Enhanced Approach:**\n"
-            ai_content += f"• Systematic debugging methodology\n"
-            ai_content += f"• Root cause analysis techniques\n"
-            ai_content += f"• Performance optimization strategies\n\n"
-            
-            ai_content += f"🔍 **Advanced Diagnostics:**\n"
-            ai_content += f"• Log analysis with `grep`, `awk`, `sed`\n"
-            ai_content += f"• System monitoring with `htop`, `iostat`\n"
-            ai_content += f"• Network analysis with `netstat`, `tcpdump`\n\n"
-            
-            ai_content += f"⚡ **Quick Wins:**\n"
-            ai_content += f"• Check system resources first\n"
-            ai_content += f"• Verify configuration files\n"
-            ai_content += f"• Test with minimal configuration\n\n"
-            
-            ai_content += f"🚀 **Long-term Solutions:**\n"
-            ai_content += f"• Implement monitoring and alerting\n"
-            ai_content += f"• Document the resolution process\n"
-            ai_content += f"• Create runbooks for future reference\n\n"
-            
-            ai_content += f"💡 **AI Recommendation:**\n"
-            ai_content += f"Consider implementing automated testing and monitoring to prevent similar issues in the future."
-            
-            return ai_content
+            # Use OpenAI if available and enabled
+            if OPENAI_AVAILABLE and openai_analyzer.is_available():
+                print(f"Using OpenAI for troubleshooting analysis")
+                ai_content, cost = openai_analyzer.generate_troubleshooting_analysis(question_text, suggestions)
+                if cost > 0:
+                    # Schedule cost update on main thread to prevent hanging
+                    self.root.after(0, lambda: self.add_to_session_cost(cost))
+                return ai_content
+            else:
+                # Fallback to template-based analysis
+                print(f"Using template fallback for troubleshooting analysis")
+                return self._get_template_troubleshooting_analysis(question_text, suggestions)
             
         except Exception as e:
+            print(f"AI troubleshooting analysis generation failed: {e}")
             return f"AI troubleshooting analysis generation failed: {e}"
+    
+    def _get_template_troubleshooting_analysis(self, question_text, suggestions):
+        """Template-based troubleshooting analysis fallback"""
+        ai_content = f"🤖 AI Troubleshooting Analysis\n\n"
+        ai_content += f"📝 **Question Analysis:**\n"
+        ai_content += f"• Detected question type: Technical troubleshooting\n"
+        ai_content += f"• Complexity level: Intermediate to Advanced\n"
+        ai_content += f"• Context: {question_text[:100]}...\n\n"
+        
+        ai_content += f"🎯 **AI-Enhanced Approach:**\n"
+        ai_content += f"• Systematic debugging methodology\n"
+        ai_content += f"• Root cause analysis techniques\n"
+        ai_content += f"• Performance optimization strategies\n\n"
+        
+        ai_content += f"🔍 **Advanced Diagnostics:**\n"
+        ai_content += f"• Log analysis with `grep`, `awk`, `sed`\n"
+        ai_content += f"• System monitoring with `htop`, `iostat`\n"
+        ai_content += f"• Network analysis with `netstat`, `tcpdump`\n\n"
+        
+        ai_content += f"⚡ **Quick Wins:**\n"
+        ai_content += f"• Check system resources first\n"
+        ai_content += f"• Verify configuration files\n"
+        ai_content += f"• Test with minimal configuration\n\n"
+        
+        ai_content += f"🚀 **Long-term Solutions:**\n"
+        ai_content += f"• Implement monitoring and alerting\n"
+        ai_content += f"• Document the resolution process\n"
+        ai_content += f"• Create runbooks for future reference\n\n"
+        
+        ai_content += f"💡 **AI Recommendation:**\n"
+        ai_content += f"Consider implementing automated testing and monitoring to prevent similar issues in the future."
+        
+        return ai_content
+    
+    def generate_contextual_ai_analysis(self, category, explanation, full_transcription, detected_keyword):
+        """Generate AI analysis based on keywords AND full transcription context"""
+        try:
+            # Use OpenAI if available and enabled
+            if OPENAI_AVAILABLE and openai_analyzer.is_available():
+                print(f"Using OpenAI for contextual analysis: {category}")
+                
+                # Create enhanced context for OpenAI
+                enhanced_explanation = explanation.copy()
+                enhanced_explanation['context'] = f"Full transcription context: {full_transcription}"
+                enhanced_explanation['detected_keyword'] = detected_keyword
+                enhanced_explanation['session_context'] = "This is part of an ongoing technical discussion session."
+                
+                ai_content, cost = openai_analyzer.generate_topic_analysis(category, enhanced_explanation)
+                if cost > 0:
+                    # Schedule cost update on main thread to prevent hanging
+                    self.root.after(0, lambda: self.add_to_session_cost(cost))
+                return ai_content
+            else:
+                # Fallback to template-based analysis with context
+                print(f"Using template fallback for contextual analysis: {category}")
+                return self._get_contextual_template_analysis(category, explanation, full_transcription, detected_keyword)
+            
+        except Exception as e:
+            print(f"Contextual AI analysis generation failed: {e}")
+            return f"Contextual AI analysis generation failed: {e}"
+    
+    def _get_contextual_template_analysis(self, category, explanation, full_transcription, detected_keyword):
+        """Template-based contextual analysis fallback"""
+        ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
+        ai_content += f"📊 **Context-Aware Insights:**\n"
+        ai_content += f"• Detected keyword: '{detected_keyword}' in category '{category}'\n"
+        ai_content += f"• Session context: {len(full_transcription.split())} words transcribed\n"
+        ai_content += f"• This topic is commonly encountered in {category} environments\n"
+        ai_content += f"• Key performance indicators to monitor\n"
+        ai_content += f"• Best practices for optimization\n\n"
+        
+        ai_content += f"🔧 **Advanced Commands:**\n"
+        ai_content += f"• Performance monitoring: `htop`, `iostat`, `netstat`\n"
+        ai_content += f"• Debugging: `strace`, `gdb`, `valgrind`\n"
+        ai_content += f"• Log analysis: `grep`, `awk`, `sed`\n\n"
+        
+        ai_content += f"⚠️ **Common Pitfalls:**\n"
+        ai_content += f"• Memory leaks and resource management\n"
+        ai_content += f"• Security vulnerabilities to watch for\n"
+        ai_content += f"• Performance bottlenecks\n\n"
+        
+        ai_content += f"🚀 **Next Steps:**\n"
+        ai_content += f"• Consider implementing monitoring\n"
+        ai_content += f"• Review security best practices\n"
+        ai_content += f"• Plan for scalability\n\n"
+        
+        ai_content += f"💡 **Contextual AI Suggestion:**\n"
+        ai_content += f"Based on the keyword '{detected_keyword}' in your discussion about {category}, "
+        ai_content += f"consider exploring related technologies and implementing automated testing and monitoring solutions."
+        
+        return ai_content
+    
+    def check_and_analyze_keywords_throttled(self, text):
+        """Throttled version of keyword analysis to prevent UI freezing"""
+        try:
+            current_time = time.time()
+            
+            # Check if enough time has passed since last analysis
+            if current_time - self.last_ai_analysis_time < self.ai_analysis_throttle_seconds:
+                return  # Skip analysis if too soon
+            
+            # Get current full transcription
+            current_transcription = self.transcription_text.get("1.0", tk.END).strip()
+            
+            # Only analyze if transcription has changed since last analysis
+            if current_transcription == self.last_analyzed_transcription:
+                return  # No new content to analyze
+            
+            # Check if AI analysis is already running
+            with self.ai_analysis_lock:
+                if self.ai_analysis_running:
+                    # Buffer the new content for processing after current analysis completes
+                    self.transcription_buffer = current_transcription
+                    self.pending_ai_analysis = True
+                    print(f"AI analysis already running, buffering new content ({len(text)} chars)")
+                    return
+                self.ai_analysis_running = True
+            
+            # Run keyword analysis in a separate thread to prevent UI blocking
+            analysis_thread = threading.Thread(
+                target=self.check_and_analyze_keywords,
+                args=(text, current_transcription),
+                daemon=True
+            )
+            analysis_thread.start()
+            
+        except Exception as e:
+            print(f"Error in throttled keyword analysis: {e}")
+            with self.ai_analysis_lock:
+                self.ai_analysis_running = False
+    
+    def check_and_analyze_keywords(self, text, full_transcription):
+        """Check for keywords in text and automatically trigger AI analysis"""
+        try:
+            text_lower = text.lower()
+            found_keywords = []
+            
+            # Check all keyword categories for new keywords
+            for category, keywords in self.tech_keywords.items():
+                for keyword in keywords:
+                    if keyword.lower() in text_lower:
+                        # Create a unique identifier for this keyword in this context
+                        keyword_id = f"{category}:{keyword.lower()}"
+                        
+                        # Only analyze if we haven't seen this keyword before
+                        if keyword_id not in self.analyzed_keywords:
+                            found_keywords.append((category, keyword))
+                            self.analyzed_keywords.add(keyword_id)
+                            break  # Only need one match per category
+            
+            # If new keywords found, generate AI analysis
+            if found_keywords:
+                # Get the most relevant category (first match)
+                category, keyword = found_keywords[0]
+                
+                # Get topic explanation for context
+                explanations = self.get_topic_explanations()
+                if category in explanations:
+                    explanation = explanations[category]
+                    
+                    # Generate AI analysis with full context
+                    if self.ai_enabled_var.get():
+                        ai_content = self.generate_contextual_ai_analysis(category, explanation, full_transcription, keyword)
+                        
+                        # Schedule UI updates on main thread to prevent hanging
+                        self.root.after(0, lambda: self.show_ai_analysis(ai_content))
+                        self.root.after(0, lambda: self.show_topic_explanation(category))
+                        
+                        # Update timestamp and transcription tracking
+                        self.last_ai_analysis_time = time.time()
+                        self.last_analyzed_transcription = full_transcription
+                        
+                        print(f"AI analysis triggered for new keyword: '{keyword}' in category: '{category}'")
+                    else:
+                        # Schedule UI update on main thread
+                        self.root.after(0, lambda: self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights."))
+            else:
+                # No new keywords found, but update the transcription tracking
+                self.last_analyzed_transcription = full_transcription
+            
+        except Exception as e:
+            print(f"Error in keyword analysis: {e}")
+        finally:
+            # Always release the lock when done
+            with self.ai_analysis_lock:
+                self.ai_analysis_running = False
+                
+                # Check if there's buffered content to process
+                if self.pending_ai_analysis and self.transcription_buffer:
+                    print("Processing buffered transcription content...")
+                    # Process the buffered content in a new thread
+                    buffered_thread = threading.Thread(
+                        target=self.process_buffered_content,
+                        daemon=True
+                    )
+                    buffered_thread.start()
+    
+    def process_buffered_content(self):
+        """Process buffered transcription content after AI analysis completes"""
+        try:
+            # Reset the pending flag and get the buffered content
+            self.pending_ai_analysis = False
+            buffered_transcription = self.transcription_buffer
+            self.transcription_buffer = ""
+            
+            if not buffered_transcription:
+                return
+            
+            # Check if we have new keywords in the buffered content
+            buffered_lower = buffered_transcription.lower()
+            found_keywords = []
+            
+            # Check all keyword categories for new keywords
+            for category, keywords in self.tech_keywords.items():
+                for keyword in keywords:
+                    if keyword.lower() in buffered_lower:
+                        # Create a unique identifier for this keyword in this context
+                        keyword_id = f"{category}:{keyword.lower()}"
+                        
+                        # Only analyze if we haven't seen this keyword before
+                        if keyword_id not in self.analyzed_keywords:
+                            found_keywords.append((category, keyword))
+                            self.analyzed_keywords.add(keyword_id)
+                            break  # Only need one match per category
+            
+            # If new keywords found, generate AI analysis
+            if found_keywords:
+                # Get the most relevant category (first match)
+                category, keyword = found_keywords[0]
+                
+                # Get topic explanation for context
+                explanations = self.get_topic_explanations()
+                if category in explanations:
+                    explanation = explanations[category]
+                    
+                    # Generate AI analysis with full context
+                    if self.ai_enabled_var.get():
+                        ai_content = self.generate_contextual_ai_analysis(category, explanation, buffered_transcription, keyword)
+                        
+                        # Schedule UI updates on main thread to prevent hanging
+                        self.root.after(0, lambda: self.show_ai_analysis(ai_content))
+                        self.root.after(0, lambda: self.show_topic_explanation(category))
+                        
+                        # Update timestamp and transcription tracking
+                        self.last_ai_analysis_time = time.time()
+                        self.last_analyzed_transcription = buffered_transcription
+                        
+                        print(f"Buffered AI analysis triggered for new keyword: '{keyword}' in category: '{category}'")
+                    else:
+                        # Schedule UI update on main thread
+                        self.root.after(0, lambda: self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights."))
+            else:
+                # No new keywords found, but update the transcription tracking
+                self.last_analyzed_transcription = buffered_transcription
+                print("Buffered content processed, no new keywords found")
+                
+        except Exception as e:
+            print(f"Error processing buffered content: {e}")
     
     def show_topic_explanation(self, category):
         """Display topic explanation for the clicked keyword category"""
@@ -1223,6 +1562,18 @@ class SpeechTranscriptionApp:
         self.topic_text.delete("1.0", tk.END)
         self.topic_text.config(state=tk.DISABLED)
         self.current_transcription = ""
+        
+        # Reset analyzed keywords to allow fresh analysis
+        self.analyzed_keywords.clear()
+        self.last_analyzed_transcription = ""
+        
+        # Reset AI analysis lock and buffer
+        with self.ai_analysis_lock:
+            self.ai_analysis_running = False
+            self.transcription_buffer = ""
+            self.pending_ai_analysis = False
+        
+        print("Cleared transcription and reset keyword analysis tracking")
 
 def main():
     """Main application entry point"""
