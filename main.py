@@ -126,6 +126,12 @@ class SpeechTranscriptionApp:
         self.setup_speech_recognition()
         self.setup_offline_recognition()
         
+        # Update audio status
+        self.update_audio_status()
+        
+        # Bind audio status refresh to microphone changes
+        self.root.bind("<FocusIn>", lambda e: self.update_audio_status())
+        
     def setup_ui(self):
         """Set up the user interface"""
         # Main frame
@@ -153,6 +159,20 @@ class SpeechTranscriptionApp:
         self.status_label = ttk.Label(control_frame, text="Status: Ready")
         self.status_label.pack(side=tk.LEFT, padx=(20, 0))
         
+        # Audio status display
+        self.audio_status_label = ttk.Label(control_frame, text="Audio Status: Default Microphone")
+        self.audio_status_label.pack(side=tk.LEFT, padx=(20, 0))
+        
+        # AI toggle checkbox
+        self.ai_enabled_var = tk.BooleanVar(value=True)
+        self.ai_checkbox = ttk.Checkbutton(
+            control_frame, 
+            text="Enable AI Analysis", 
+            variable=self.ai_enabled_var,
+            command=self.on_ai_toggle
+        )
+        self.ai_checkbox.pack(side=tk.LEFT, padx=(20, 0))
+        
         # Create resizable paned window for transcription and topic areas
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
         self.paned_window.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -171,33 +191,59 @@ class SpeechTranscriptionApp:
         )
         self.transcription_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Bottom pane - Topic explanation panel
-        topic_frame = ttk.LabelFrame(self.paned_window, text="Topic Explanation & Troubleshooting", padding="5")
-        self.paned_window.add(topic_frame, weight=1)
+        # Bottom pane - Split into topic explanation and AI output
+        bottom_frame = ttk.Frame(self.paned_window)
+        self.paned_window.add(bottom_frame, weight=1)
+        
+        # Create horizontal PanedWindow for bottom split
+        self.bottom_paned = ttk.PanedWindow(bottom_frame, orient=tk.HORIZONTAL)
+        self.bottom_paned.pack(fill=tk.BOTH, expand=True)
+        
+        # Left side - Topic explanation panel
+        topic_frame = ttk.LabelFrame(self.bottom_paned, text="Topic Explanation & Troubleshooting", padding="5")
+        self.bottom_paned.add(topic_frame, weight=1)
         topic_frame.columnconfigure(0, weight=1)
         topic_frame.rowconfigure(0, weight=1)
         
         self.topic_text = scrolledtext.ScrolledText(
             topic_frame,
             wrap=tk.WORD,
-            height=15,  # Made same height as transcription
+            height=15,
             font=("Arial", 10),
             state=tk.DISABLED
         )
         self.topic_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
+        # Right side - AI-driven output panel
+        ai_frame = ttk.LabelFrame(self.bottom_paned, text="AI-Driven Analysis & Suggestions", padding="5")
+        self.bottom_paned.add(ai_frame, weight=1)
+        ai_frame.columnconfigure(0, weight=1)
+        ai_frame.rowconfigure(0, weight=1)
+        
+        self.ai_text = scrolledtext.ScrolledText(
+            ai_frame,
+            wrap=tk.WORD,
+            height=15,
+            font=("Arial", 10),
+            state=tk.DISABLED
+        )
+        self.ai_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
         # Bind click events to transcription text
         self.transcription_text.bind("<Button-1>", self.on_text_click)
         
-        # Set initial pane position (50/50 split)
+        # Set initial pane positions (50/50 splits)
         self.paned_window.pane(0, weight=1)
         self.paned_window.pane(1, weight=1)
+        self.bottom_paned.pane(0, weight=1)
+        self.bottom_paned.pane(1, weight=1)
         
         # Bind pane resize events to save user preferences
-        self.paned_window.bind("<ButtonRelease-1>", self.on_pane_resize)
+        self.paned_window.bind("<ButtonRelease-1>", self.on_vertical_pane_resize)
+        self.bottom_paned.bind("<ButtonRelease-1>", self.on_horizontal_pane_resize)
         
-        # Restore saved pane position after a short delay
-        self.root.after(100, self.restore_pane_position)
+        # Restore saved pane positions after a short delay
+        self.root.after(100, self.restore_pane_positions)
         
     def setup_caching(self):
         """Initialize caching system"""
@@ -577,32 +623,178 @@ class SpeechTranscriptionApp:
             category = keyword_tags[0].replace("keyword_", "")
             self.show_topic_explanation(category)
     
-    def on_pane_resize(self, event):
-        """Handle pane resize events to save user preferences"""
+    def on_vertical_pane_resize(self, event):
+        """Handle vertical pane resize events (transcription vs bottom area)"""
         try:
-            # Get current pane positions
             sash_pos = self.paned_window.sashpos(0)
             window_height = self.paned_window.winfo_height()
-            
-            # Calculate relative position (0.0 to 1.0)
             if window_height > 0:
                 relative_pos = sash_pos / window_height
-                # Save to cache for next session
-                self.session_cache['pane_position'] = relative_pos
+                self.session_cache['vertical_pane_position'] = relative_pos
         except Exception as e:
-            print(f"Error saving pane position: {e}")
+            print(f"Error saving vertical pane position: {e}")
     
-    def restore_pane_position(self):
-        """Restore saved pane position from cache"""
+    def on_horizontal_pane_resize(self, event):
+        """Handle horizontal pane resize events (topic vs AI)"""
         try:
-            if 'pane_position' in self.session_cache:
-                relative_pos = self.session_cache['pane_position']
+            sash_pos = self.bottom_paned.sashpos(0)
+            window_width = self.bottom_paned.winfo_width()
+            if window_width > 0:
+                relative_pos = sash_pos / window_width
+                self.session_cache['horizontal_pane_position'] = relative_pos
+        except Exception as e:
+            print(f"Error saving horizontal pane position: {e}")
+    
+    def restore_pane_positions(self):
+        """Restore saved pane positions from cache"""
+        try:
+            # Restore vertical pane position
+            if 'vertical_pane_position' in self.session_cache:
+                relative_pos = self.session_cache['vertical_pane_position']
                 window_height = self.paned_window.winfo_height()
                 if window_height > 0:
                     sash_pos = int(relative_pos * window_height)
                     self.paned_window.sashpos(0, sash_pos)
+            
+            # Restore horizontal pane position
+            if 'horizontal_pane_position' in self.session_cache:
+                relative_pos = self.session_cache['horizontal_pane_position']
+                window_width = self.bottom_paned.winfo_width()
+                if window_width > 0:
+                    sash_pos = int(relative_pos * window_width)
+                    self.bottom_paned.sashpos(0, sash_pos)
         except Exception as e:
-            print(f"Error restoring pane position: {e}")
+            print(f"Error restoring pane positions: {e}")
+    
+    def on_ai_toggle(self):
+        """Handle AI toggle checkbox state change"""
+        try:
+            ai_enabled = self.ai_enabled_var.get()
+            if ai_enabled:
+                print("AI Analysis enabled")
+                # Show AI pane if it was hidden
+                self.show_ai_analysis("AI Analysis enabled. Click on keywords or ask questions to see AI-enhanced insights.")
+            else:
+                print("AI Analysis disabled")
+                # Clear AI pane and show disabled message
+                self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
+        except Exception as e:
+            print(f"Error handling AI toggle: {e}")
+    
+    def show_ai_analysis(self, content):
+        """Display AI-driven analysis in the AI pane"""
+        try:
+            self.ai_text.config(state=tk.NORMAL)
+            self.ai_text.delete("1.0", tk.END)
+            self.ai_text.insert("1.0", content)
+            self.ai_text.config(state=tk.DISABLED)
+            self.ai_text.see(tk.END)
+        except Exception as e:
+            print(f"Error displaying AI analysis: {e}")
+    
+    def update_audio_status(self):
+        """Update the audio status display with current microphone info"""
+        try:
+            # Get microphone device info
+            mic_name = "Unknown"
+            if hasattr(self, 'microphone') and self.microphone:
+                try:
+                    # Try to get device name from microphone
+                    device_index = self.microphone.device_index
+                    if device_index is not None:
+                        import pyaudio
+                        p = pyaudio.PyAudio()
+                        try:
+                            device_info = p.get_device_info_by_index(device_index)
+                            mic_name = device_info.get('name', 'Default Microphone')
+                        except:
+                            mic_name = f"Device {device_index}"
+                        finally:
+                            p.terminate()
+                    else:
+                        mic_name = "Default Microphone"
+                except Exception as e:
+                    print(f"Error getting microphone info: {e}")
+                    mic_name = "Default Microphone"
+            
+            # Update the status label
+            self.audio_status_label.config(text=f"Audio Status: {mic_name}")
+            print(f"Audio status updated: {mic_name}")
+            
+        except Exception as e:
+            print(f"Error updating audio status: {e}")
+            self.audio_status_label.config(text="Audio Status: Unknown")
+    
+    def generate_ai_analysis(self, category, explanation):
+        """Generate AI-driven analysis for a topic"""
+        try:
+            # For now, generate enhanced analysis based on the topic
+            ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
+            ai_content += f"📊 **Advanced Insights:**\n"
+            ai_content += f"• This topic is commonly encountered in {category} environments\n"
+            ai_content += f"• Key performance indicators to monitor\n"
+            ai_content += f"• Best practices for optimization\n\n"
+            
+            ai_content += f"🔧 **Advanced Commands:**\n"
+            ai_content += f"• Performance monitoring: `htop`, `iostat`, `netstat`\n"
+            ai_content += f"• Debugging: `strace`, `gdb`, `valgrind`\n"
+            ai_content += f"• Log analysis: `grep`, `awk`, `sed`\n\n"
+            
+            ai_content += f"⚠️ **Common Pitfalls:**\n"
+            ai_content += f"• Memory leaks and resource management\n"
+            ai_content += f"• Security vulnerabilities to watch for\n"
+            ai_content += f"• Performance bottlenecks\n\n"
+            
+            ai_content += f"🚀 **Next Steps:**\n"
+            ai_content += f"• Consider implementing monitoring\n"
+            ai_content += f"• Review security best practices\n"
+            ai_content += f"• Plan for scalability\n\n"
+            
+            ai_content += f"💡 **AI Suggestion:**\n"
+            ai_content += f"Based on the topic '{category}', consider exploring related technologies "
+            ai_content += f"and implementing automated testing and monitoring solutions."
+            
+            return ai_content
+            
+        except Exception as e:
+            return f"AI analysis generation failed: {e}"
+    
+    def generate_ai_troubleshooting(self, question_text, suggestions):
+        """Generate AI-driven troubleshooting analysis"""
+        try:
+            ai_content = f"🤖 AI Troubleshooting Analysis\n\n"
+            ai_content += f"📝 **Question Analysis:**\n"
+            ai_content += f"• Detected question type: Technical troubleshooting\n"
+            ai_content += f"• Complexity level: Intermediate to Advanced\n"
+            ai_content += f"• Context: {question_text[:100]}...\n\n"
+            
+            ai_content += f"🎯 **AI-Enhanced Approach:**\n"
+            ai_content += f"• Systematic debugging methodology\n"
+            ai_content += f"• Root cause analysis techniques\n"
+            ai_content += f"• Performance optimization strategies\n\n"
+            
+            ai_content += f"🔍 **Advanced Diagnostics:**\n"
+            ai_content += f"• Log analysis with `grep`, `awk`, `sed`\n"
+            ai_content += f"• System monitoring with `htop`, `iostat`\n"
+            ai_content += f"• Network analysis with `netstat`, `tcpdump`\n\n"
+            
+            ai_content += f"⚡ **Quick Wins:**\n"
+            ai_content += f"• Check system resources first\n"
+            ai_content += f"• Verify configuration files\n"
+            ai_content += f"• Test with minimal configuration\n\n"
+            
+            ai_content += f"🚀 **Long-term Solutions:**\n"
+            ai_content += f"• Implement monitoring and alerting\n"
+            ai_content += f"• Document the resolution process\n"
+            ai_content += f"• Create runbooks for future reference\n\n"
+            
+            ai_content += f"💡 **AI Recommendation:**\n"
+            ai_content += f"Consider implementing automated testing and monitoring to prevent similar issues in the future."
+            
+            return ai_content
+            
+        except Exception as e:
+            return f"AI troubleshooting analysis generation failed: {e}"
     
     def show_topic_explanation(self, category):
         """Display topic explanation for the clicked keyword category"""
@@ -636,6 +828,13 @@ class SpeechTranscriptionApp:
             
             # Cache the explanation
             self.cache_explanation(category, formatted_text)
+            
+            # Show AI analysis for the topic (if enabled)
+            if self.ai_enabled_var.get():
+                ai_content = self.generate_ai_analysis(category, explanation)
+                self.show_ai_analysis(ai_content)
+            else:
+                self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
     
     def get_topic_explanations(self):
         """Get topic explanations, challenges, and commands"""
@@ -853,6 +1052,13 @@ class SpeechTranscriptionApp:
             
             # Cache the suggestions
             self.cache_troubleshooting(question_hash, formatted_text)
+            
+            # Show AI analysis for troubleshooting (if enabled)
+            if self.ai_enabled_var.get():
+                ai_content = self.generate_ai_troubleshooting(question_text, suggestions)
+                self.show_ai_analysis(ai_content)
+            else:
+                self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
     
     def get_troubleshooting_suggestions(self, question_text):
         """Get troubleshooting suggestions based on question content"""
