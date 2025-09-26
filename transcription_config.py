@@ -161,7 +161,31 @@ LANGUAGE_MODELS = {
             # System Tuning
             'cpu governor', 'performance governor', 'powersave', 'ondemand',
             'dvfs', 'frequency scaling', 'interrupt affinity', 'irq', 'softirq',
-            'tasklet', 'napi'
+            'tasklet', 'napi',
+            
+            # Clustering & High Availability
+            'split-brain', 'quorum', 'witness', 'tiebreaker', 'consensus',
+            'pacemaker', 'corosync', 'heartbeat', 'stonith', 'fencing',
+            'failover', 'failback', 'active-passive', 'active-active',
+            'standby', 'floating ip', 'virtual ip', 'cluster ip',
+            
+            # Distributed Systems
+            'cap theorem', 'consistency', 'availability', 'partition tolerance',
+            'acid', 'atomicity', 'isolation', 'durability', 'raft', 'paxos',
+            'byzantine', 'leader election', 'consensus algorithm',
+            
+            # Load Balancing & Networking
+            'load balancer', 'round-robin', 'least connections', 'sticky sessions',
+            'session affinity', 'upstream', 'downstream', 'bonding', 'lacp',
+            'link aggregation', 'nic teaming', 'active-backup',
+            
+            # Storage & File Systems
+            'shared storage', 'cluster file system', 'gfs', 'gfs2', 'ocfs',
+            'cluster lvm', 'multipath', 'alua', 'raw device', 'block device',
+            
+            # Monitoring & SLA
+            'sla', 'slo', 'sli', 'mttr', 'mtbf', 'uptime', 'downtime',
+            'incident', 'outage', 'runbook', 'playbook', 'escalation'
         ]
     }
 }
