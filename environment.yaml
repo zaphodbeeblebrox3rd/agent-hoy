@@ -5,11 +5,12 @@ channels:
 dependencies:
   # - flac  # FLAC is required for Google Speech Recognition but installation not working on Windows
   - python=3.11
-  - pyaudio
+  # - pyaudio
   - speechrecognition
   - requests
   - pip
   - pip:
+    - PyAudio>=0.2.11  # Install via pip for better macOS ARM compatibility
     - pocketsphinx  # Install via pip since not available in conda-forge for Windows
     - vosk
     - openai-whisper  # High-quality offline speech recognition

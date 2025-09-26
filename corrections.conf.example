@@ -1,0 +1,877 @@
+# Transcription Corrections Configuration
+# Format: original_text = corrected_text
+# Lines starting with # are comments
+
+# ========================================
+# PYTHON AI & DATA SCIENCE LIBRARIES
+# ========================================
+
+# Core Data Science Libraries
+panda = pandas
+pan does = pandas
+pen does = pandas
+num pie = numpy
+num pi = numpy
+numb pie = numpy
+number pie = numpy
+numpy = numpy
+sigh pie = scipy
+sci pi = scipy
+psy pie = scipy
+scipy = scipy
+mat plot lib = matplotlib
+matter plot lib = matplotlib
+matplotlib = matplotlib
+psychic kit learn = scikit-learn
+psy kit learn = scikit-learn
+scikit learn = scikit-learn
+psychic learn = scikit-learn
+sklearn = sklearn
+seaborn = seaborn
+sea born = seaborn
+see born = seaborn
+plot lee = plotly
+plotly = plotly
+
+# Machine Learning Libraries
+tensor flow = tensorflow
+tensorflow = tensorflow
+tensor board = tensorboard
+tensorboard = tensorboard
+py torch = pytorch
+care ass = keras
+keras = keras
+light GBM = lightgbm
+lightgbm = lightgbm
+cat boost = catboost
+catboost = catboost
+extra boost = xgboost
+X G boost = xgboost
+xgboost = xgboost
+
+# Deep Learning & Neural Networks
+hub space = hugging face
+hugging face = hugging face
+transformers = transformers
+lime = lime
+shap = shap
+shop = shap
+ML flow = mlflow
+mlflow = mlflow
+weights and biases = wandb
+one d be = wandb
+wandb = wandb
+
+# Computer Vision
+open CV = opencv
+opencv = opencv
+pill ow = pillow
+pillow = pillow
+PIL = PIL
+scikit image = scikit-image
+sk image = scikit-image
+
+# Natural Language Processing
+spacy = spacy
+spacey = spacy
+space E = spacy
+nltk = nltk
+gensim = gensim
+gen sim = gensim
+text blob = textblob
+textblob = textblob
+
+# Data Manipulation & Analysis
+pole airs = polars
+polars = polars
+pie arrow = pyarrow
+pyarrow = pyarrow
+day task = dask
+dask = dask
+moose din = modin
+modin = modin
+vaex = vaex
+
+# Visualization & Dashboards
+bokeh = bokeh
+boca = bokeh
+altair = altair
+stream lit = streamlit
+streamlit = streamlit
+dash = dash
+gradio = gradio
+grey deo = gradio
+
+# Statistical Libraries
+stats models = statsmodels
+statsmodels = statsmodels
+pie M C = pymc
+pymc = pymc
+pi M C = pymc
+stan = stan
+pystan = pystan
+pie stand = pystan
+
+# Time Series
+prophet = prophet
+profit = prophet
+stats fore cast = statsforecast
+statsforecast = statsforecast
+
+# ========================================
+# PYTHON PROGRAMMING TERMS
+# ========================================
+
+# Core Python Concepts
+pie thon = python
+python = python
+pip = pip
+pie P = pip
+conda = conda
+condo = conda
+anaconda = anaconda
+mamba = mamba
+mama = mamba
+virtual env = virtualenv
+virtualenv = virtualenv
+venv = venv
+B N = venv
+jupiter = jupyter
+jupyter = jupyter
+jupiter notebook = jupyter notebook
+jupyter notebook = jupyter notebook
+jupiter lab = jupyter lab
+jupyter lab = jupyter lab
+I python = ipython
+ipython = ipython
+pie pie = pypi
+pypi = pypi
+
+# Object-Oriented Programming
+class = class
+method = method
+function = function
+def = def
+init = __init__
+dunder in it = __init__
+double underscore init = __init__
+self = self
+super = super
+inheritance = inheritance
+polymorphism = polymorphism
+encapsulation = encapsulation
+
+# Data Structures
+list = list
+tuple = tuple
+dictionary = dictionary
+dict = dict
+set = set
+array = array
+data frame = dataframe
+dataframe = dataframe
+
+# Control Flow
+if = if
+else = else
+L if = elif
+elif = elif
+for = for
+while = while
+try = try
+except = except
+finally = finally
+with = with
+lambda = lambda
+yield = yield
+
+# Common Libraries
+requests = requests
+flask = flask
+django = django
+jango = django
+fast API = fastapi
+fastapi = fastapi
+SQL alchemy = sqlalchemy
+sqlalchemy = sqlalchemy
+pie test = pytest
+pytest = pytest
+unit test = unittest
+unittest = unittest
+
+# ========================================
+# HPC (HIGH PERFORMANCE COMPUTING) TERMS
+# ========================================
+
+# Job Schedulers & Resource Managers
+slurm = slurm
+storm = slurm
+slam = slurm
+PBS = pbs
+P B S = pbs
+torque = torque
+talk = torque
+maui = maui
+mowie = maui
+moab = moab
+mo ab = moab
+condor = condor
+HTCondor = htcondor
+H T condor = htcondor
+SGE = sge
+S G E = sge
+LSF = lsf
+L S F = lsf
+
+# MPI & Parallel Computing
+MPI = mpi
+M P I = mpi
+open MPI = openmpi
+openmpi = openmpi
+intel MPI = intel mpi
+MPICH = mpich
+M P I C H = mpich
+message passing = message passing
+parallel computing = parallel computing
+distributed computing = distributed computing
+
+# OpenMP & Threading
+open MP = openmp
+openmp = openmp
+O M P = omp
+omp = omp
+threading = threading
+multi threading = multithreading
+multithreading = multithreading
+shared memory = shared memory
+
+# GPU Computing
+CUDA = cuda
+C U D A = cuda
+cooper = cuda
+hip = hip
+H I P = hip
+ROCm = rocm
+R O C M = rocm
+OpenCL = opencl
+open C L = opencl
+NVIDIA = nvidia
+and video = nvidia
+AMD = amd
+A M D = amd
+
+# Interconnects & Networking
+infinite band = infiniband
+in fini band = infiniband
+InfiniBand = infiniband
+Ethernet = ethernet
+ether net = ethernet
+RDMA = rdma
+R D M A = rdma
+RoCE = roce
+R o C E = roce
+over ethernet = over ethernet
+Mellanox = mellanox
+melon ox = mellanox
+
+# File Systems & Storage
+Lustre = lustre
+luster = lustre
+GPFS = gpfs
+G P F S = gpfs
+BeeGFS = beegfs
+bee G F S = beegfs
+Ceph = ceph
+sef = ceph
+GlusterFS = glusterfs
+gluster F S = glusterfs
+NFS = nfs
+N F S = nfs
+parallel file system = parallel file system
+
+# Performance Tools & Profiling
+vtune = vtune
+V tune = vtune
+perf = perf
+gprof = gprof
+G prof = gprof
+valgrind = valgrind
+val grind = valgrind
+intel advisor = intel advisor
+advisor = advisor
+TAU = tau
+T A U = tau
+scorep = scorep
+score P = scorep
+
+# Benchmarking & Testing
+LINPACK = linpack
+lin pack = linpack
+HPL = hpl
+H P L = hpl
+HPCG = hpcg
+H P C G = hpcg
+NPB = npb
+N P B = npb
+NAS = nas
+N A S = nas
+stream = stream
+bandwidth = bandwidth
+
+# ========================================
+# HYBRID-CLOUD COMPUTING TERMS
+# ========================================
+
+# Cloud Platforms & Services
+AWS = aws
+eight of us = aws
+Amazon = amazon
+easy to = ec2
+ec2 = ec2
+S three = s3
+s3 = s3
+lambda = lambda
+cloud formation = cloudformation
+cloudformation = cloudformation
+cloud watch = cloudwatch
+cloudwatch = cloudwatch
+sage maker = sagemaker
+sagemaker = sagemaker
+azure = azure
+a sure = azure
+Microsoft = microsoft
+micro soft = microsoft
+GCP = gcp
+G C P = gcp
+Google Cloud = google cloud
+google cloud = google cloud
+
+# Hybrid Cloud Architecture
+hybrid cloud = hybrid-cloud
+hybrid cloud = hybrid cloud
+multi cloud = multi-cloud
+multicloud = multicloud
+cloud burst = cloud-burst
+cloudburst = cloudbursting
+cloud bursting = cloudbursting
+on premise = on-premise
+on premises = on-premises
+edge computing = edge computing
+fog computing = fog computing
+
+# Container Orchestration
+docker = docker
+docker file = dockerfile
+dockerfile = dockerfile
+docker compose = docker-compose
+docker compose = docker-compose
+kubernetes = kubernetes
+kube net ease = kubernetes
+cube net ease = kubernetes
+kube net ease = kubernetes
+K eight s = kubernetes
+k8s = kubernetes
+docker swarm = docker swarm
+nomad = nomad
+no mad = nomad
+
+# Service Mesh & Microservices
+istio = istio
+is tea oh = istio
+linkerd = linkerd
+linker D = linkerd
+consul = consul
+con soul = consul
+envoy = envoy
+en voy = envoy
+microservices = microservices
+micro services = microservices
+service mesh = service mesh
+
+# Infrastructure as Code
+terraform = terraform
+terra form = terraform
+ansible = ansible
+ann sible = ansible
+chef = chef
+puppet = puppet
+pup it = puppet
+helm = helm
+kustomize = kustomize
+custom eyes = kustomize
+
+# Cloud Native & CNCF
+cloud native = cloud-native
+cloud native = cloud native
+CNCF = cncf
+C N C F = cncf
+prometheus = prometheus
+pro me the us = prometheus
+grafana = grafana
+gra fana = grafana
+jaeger = jaeger
+jay ger = jaeger
+fluent = fluent
+flu ent = fluent
+
+# Load Balancing & Networking
+load balancer = load balancer
+nginx = nginx
+N gin X = nginx
+HAProxy = haproxy
+H A proxy = haproxy
+F5 = f5
+F five = f5
+CDN = cdn
+C D N = cdn
+content delivery = content delivery
+
+# Storage & Databases
+elastic search = elasticsearch
+elasticsearch = elasticsearch
+kibana = kibana
+key bana = kibana
+logstash = logstash
+log stash = logstash
+redis = redis
+re dis = redis
+memcached = memcached
+mem cached = memcached
+mongo DB = mongodb
+mongodb = mongodb
+
+# Monitoring & Observability
+data dog = datadog
+datadog = datadog
+new relic = new relic
+newrelic = newrelic
+splunk = splunk
+app dynamics = appdynamics
+appdynamics = appdynamics
+dynatrace = dynatrace
+dyna trace = dynatrace
+
+# ========================================
+# CLOUD & DEVOPS TERMS (UPDATED)
+# ========================================
+
+# Version Control
+git = git
+github = github
+git hub = github
+git lab = gitlab
+gitlab = gitlab
+commit = commit
+push = push
+pull = pull
+merge = merge
+branch = branch
+clone = clone
+
+# CI/CD & DevOps
+jenkins = jenkins
+jen kins = jenkins
+gitlab CI = gitlab ci
+git lab CI = gitlab ci
+github actions = github actions
+circle CI = circleci
+circle C I = circleci
+travis = travis
+trav is = travis
+bamboo = bamboo
+bam boo = bamboo
+
+# ========================================
+# HFT (HIGH FREQUENCY TRADING) HPC TERMS
+# ========================================
+
+# Low-Latency Hardware & Architecture
+FPGA = fpga
+F P G A = fpga
+field programmable = fpga
+field programmable gate array = fpga
+smart NIC = smartnic
+smartnic = smartnic
+smart nick = smartnic
+ASIC = asic
+A S I C = asic
+application specific = asic
+tick to trade = tick-to-trade
+tick two trade = tick-to-trade
+CPU pinning = cpu pinning
+C P U pinning = cpu pinning
+NUMA = numa
+N U M A = numa
+non uniform memory = numa
+cache line = cache line
+cache miss = cache miss
+branch prediction = branch prediction
+instruction pipeline = instruction pipeline
+out of order = out-of-order
+speculative execution = speculative execution
+
+# Ultra-Low Latency Networking
+kernel bypass = kernel bypass
+user space = userspace
+user land = userland
+DPDK = dpdk
+D P D K = dpdk
+data plane development = dpdk
+SR-IOV = sr-iov
+S R I O V = sriov
+single root = sr-iov
+VF = vf
+V F = vf
+virtual function = virtual function
+PF = pf
+P F = pf
+physical function = physical function
+cut through = cut-through
+store and forward = store-and-forward
+packet pacing = packet pacing
+traffic shaping = traffic shaping
+QOS = qos
+Q O S = qos
+quality of service = quality of service
+ECN = ecn
+E C N = ecn
+explicit congestion = ecn
+
+# High-Speed Interconnects & Protocols
+InfiniBand = infiniband
+I B = ib
+ib = ib
+infinite band = infiniband
+RoCE = roce
+R o C E = roce
+RDMA = rdma
+R D M A = rdma
+remote direct memory = rdma
+iWARP = iwarp
+i warp = iwarp
+Omni-Path = omnipath
+omni path = omnipath
+100 gig = 100gig
+100 gigabit = 100 gigabit
+400 gig = 400gig
+400 gigabit = 400 gigabit
+25 gig = 25gig
+25 gigabit = 25 gigabit
+Mellanox = mellanox
+melon ox = mellanox
+Intel = intel
+in tell = intel
+Broadcom = broadcom
+broad com = broadcom
+ConnectX = connectx
+connect X = connectx
+NICs = nics
+N I Cs = nics
+network interface = network interface
+
+# Memory & Storage Performance
+DDR4 = ddr4
+D D R 4 = ddr4
+DDR5 = ddr5
+D D R 5 = ddr5
+LRDIMM = lrdimm
+L R D I M M = lrdimm
+load reduced = lrdimm
+RDIMM = rdimm
+R D I M M = rdimm
+registered = rdimm
+ECC = ecc
+E C C = ecc
+error correcting = ecc
+memory bandwidth = memory bandwidth
+memory latency = memory latency
+CAS latency = cas latency
+C A S latency = cas latency
+NVMe = nvme
+N V M E = nvme
+non volatile memory = nvme
+IOPS = iops
+I O P S = iops
+input output operations = iops
+throughput = throughput
+SSD = ssd
+S S D = ssd
+solid state = ssd
+optane = optane
+op tane = optane
+3D XPoint = 3d xpoint
+three D X point = 3d xpoint
+
+# CPU & Processing Optimization
+Intel Xeon = intel xeon
+zen on = xeon
+AMD EPYC = amd epyc
+epic = epyc
+E P Y C = epyc
+Skylake = skylake
+sky lake = skylake
+Ice Lake = ice lake
+ice lake = ice lake
+Cascade Lake = cascade lake
+cascade lake = cascade lake
+Cooper Lake = cooper lake
+cooper lake = cooper lake
+AVX = avx
+A V X = avx
+advanced vector = avx
+AVX2 = avx2
+A V X 2 = avx2
+AVX-512 = avx-512
+A V X 512 = avx-512
+SIMD = simd
+S I M D = simd
+single instruction = simd
+hyperthreading = hyperthreading
+hyper threading = hyperthreading
+SMT = smt
+S M T = smt
+simultaneous multithreading = smt
+turbo boost = turbo boost
+turbo mode = turbo mode
+base clock = base clock
+boost clock = boost clock
+
+# Rack & Datacenter Infrastructure
+1U = 1u
+one U = 1u
+2U = 2u
+two U = 2u
+4U = 4u
+four U = 4u
+rack unit = rack unit
+top of rack = top-of-rack
+ToR = tor
+T o R = tor
+spine leaf = spine-leaf
+spine and leaf = spine-leaf
+fat tree = fat-tree
+fat tree topology = fat-tree topology
+Clos = clos
+close = clos
+non blocking = non-blocking
+oversubscription = oversubscription
+over subscription = oversubscription
+bisection bandwidth = bisection bandwidth
+by section bandwidth = bisection bandwidth
+
+# Power & Cooling Systems
+PDU = pdu
+P D U = pdu
+power distribution = pdu
+UPS = ups
+U P S = ups
+uninterruptible power = ups
+redundant power = redundant power
+hot swap = hot-swap
+hot swappable = hot-swappable
+N plus 1 = n+1
+N plus one = n+1
+liquid cooling = liquid cooling
+immersion cooling = immersion cooling
+air cooling = air cooling
+chilled water = chilled water
+CRAC = crac
+C R A C = crac
+computer room air = crac
+in row cooling = in-row cooling
+overhead cooling = overhead cooling
+raised floor = raised floor
+false floor = false floor
+cable management = cable management
+airflow = airflow
+air flow = airflow
+hot aisle = hot aisle
+cold aisle = cold aisle
+containment = containment
+
+# Monitoring & Management
+IPMI = ipmi
+I P M I = ipmi
+intelligent platform = ipmi
+iDRAC = idrac
+i drac = idrac
+i D R A C = idrac
+integrated dell = idrac
+iLO = ilo
+i L O = ilo
+integrated lights = ilo
+BMC = bmc
+B M C = bmc
+baseboard management = bmc
+out of band = out-of-band
+O O B = oob
+in band = in-band
+SNMP = snmp
+S N M P = snmp
+simple network management = snmp
+Nagios = nagios
+nag ios = nagios
+Zabbix = zabbix
+zab ix = zabbix
+Ganglia = ganglia
+gang lia = ganglia
+
+# Trading-Specific Performance
+microsecond = microsecond
+micro second = microsecond
+nanosecond = nanosecond
+nano second = nanosecond
+picosecond = picosecond
+pico second = picosecond
+latency = latency
+lay ten cy = latency
+jitter = jitter
+git ter = jitter
+deterministic = deterministic
+determinism = determinism
+real time = real-time
+real time = realtime
+market data = market data
+order entry = order entry
+risk management = risk management
+co location = co-location
+colocation = colocation
+co lo = colo
+proximity hosting = proximity hosting
+dark pool = dark pool
+ECN = ecn
+electronic communication = ecn
+matching engine = matching engine
+order book = order book
+feed handler = feed handler
+tick size = tick size
+market making = market making
+arbitrage = arbitrage
+arb = arb
+algo trading = algo trading
+algorithmic trading = algorithmic trading
+
+# Network Protocols & Standards
+TCP = tcp
+T C P = tcp
+transmission control = tcp
+UDP = udp
+U D P = udp
+user datagram = udp
+multicast = multicast
+multi cast = multicast
+broadcast = broadcast
+broad cast = broadcast
+unicast = unicast
+uni cast = unicast
+IGMP = igmp
+I G M P = igmp
+internet group management = igmp
+PIM = pim
+P I M = pim
+protocol independent = pim
+VLAN = vlan
+V L A N = vlan
+virtual LAN = vlan
+VXLAN = vxlan
+V X L A N = vxlan
+virtual extensible = vxlan
+BGP = bgp
+B G P = bgp
+border gateway = bgp
+OSPF = ospf
+O S P F = ospf
+open shortest path = ospf
+
+# Storage & File Systems for HFT
+shared memory = shared memory
+memory mapped = memory-mapped
+M map = mmap
+zero copy = zero-copy
+lock free = lock-free
+wait free = wait-free
+atomic operations = atomic operations
+compare and swap = compare-and-swap
+CAS = cas
+C A S = cas
+memory barriers = memory barriers
+memory fences = memory fences
+cache coherency = cache coherency
+cache coherence = cache coherence
+false sharing = false sharing
+temporal locality = temporal locality
+spatial locality = spatial locality
+
+# System Tuning & Optimization
+CPU governor = cpu governor
+C P U governor = cpu governor
+performance governor = performance governor
+power save = powersave
+on demand = ondemand
+conservative = conservative
+user space governor = userspace governor
+CPU frequency = cpu frequency
+C P U frequency = cpu frequency
+scaling = scaling
+DVFS = dvfs
+D V F S = dvfs
+dynamic voltage = dvfs
+frequency scaling = frequency scaling
+interrupt affinity = interrupt affinity
+IRQ = irq
+I R Q = irq
+interrupt request = irq
+soft IRQ = softirq
+soft I R Q = softirq
+tasklet = tasklet
+task let = tasklet
+NAPI = napi
+N A P I = napi
+new API = napi
+
+# ========================================
+# COMMON SPEECH-TO-TEXT ERRORS
+# ========================================
+
+# Articles and Prepositions
+the API = the API
+an API = an API
+a library = a library
+the library = the library
+in python = in Python
+with python = with Python
+using python = using Python
+
+# Common Misheard Words
+import = import
+from = from
+as = as
+install = install
+uninstall = uninstall
+upgrade = upgrade
+update = update
+configure = configure
+initialize = initialize
+instantiate = instantiate
+
+# Programming Actions
+run = run
+execute = execute
+compile = compile
+debug = debug
+test = test
+deploy = deploy
+build = build
+package = package
+
+# File Extensions
+dot pie = .py
+dot P Y = .py
+python file = .py file
+pi file = .py file
+dot Y A M L = .yaml
+dot yaml = .yaml
+dot J son = .json
+dot jason = .json
+dot C S V = .csv
+dot csv = .csv

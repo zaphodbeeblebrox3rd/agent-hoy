@@ -78,15 +78,90 @@ LANGUAGE_MODELS = {
     'english_technical': {
         'language': 'en-US',
         'phrases': [
-            'python', 'docker', 'kubernetes', 'aws', 'azure', 'linux', 'ubuntu',
+            # Core Python & Programming
+            'python', 'pip', 'conda', 'anaconda', 'virtualenv', 'venv', 'jupyter', 'ipython', 'pypi',
+            'flask', 'django', 'fastapi', 'requests', 'pytest', 'unittest', 'sqlalchemy',
+            
+            # Data Science & ML Libraries
+            'pandas', 'numpy', 'scipy', 'matplotlib', 'seaborn', 'plotly', 'scikit-learn', 'sklearn',
+            'tensorflow', 'pytorch', 'keras', 'xgboost', 'lightgbm', 'catboost', 'hugging face',
+            'transformers', 'opencv', 'pillow', 'spacy', 'nltk', 'gensim', 'textblob',
+            'polars', 'pyarrow', 'dask', 'modin', 'bokeh', 'altair', 'streamlit', 'gradio',
+            'statsmodels', 'pymc', 'prophet', 'mlflow', 'wandb', 'tensorboard',
+            
+            # Infrastructure & DevOps
+            'docker', 'dockerfile', 'docker-compose', 'kubernetes', 'aws', 'ec2', 's3', 'lambda',
+            'cloudformation', 'cloudwatch', 'sagemaker', 'azure', 'linux', 'ubuntu',
             'git', 'github', 'gitlab', 'jenkins', 'ci', 'cd', 'devops',
-            'database', 'mysql', 'postgresql', 'mongodb', 'redis',
-            'networking', 'tcp', 'udp', 'http', 'https', 'ssl', 'tls',
-            'security', 'encryption', 'authentication', 'authorization',
-            'monitoring', 'logging', 'metrics', 'alerting', 'prometheus',
-            'hpc', 'slurm', 'pbs', 'torque', 'maui', 'moab',
-            'quantum', 'qubit', 'quantum computing', 'quantum algorithm',
-            'fpga', 'rdma', 'roce', 'infiniBand', 'kernel bypass'
+            
+            # Databases & Storage
+            'database', 'mysql', 'postgresql', 'mongodb', 'redis', 'elasticsearch', 'cassandra',
+            
+            # Networking & Security
+            'networking', 'tcp', 'udp', 'http', 'https', 'ssl', 'tls', 'api', 'rest', 'graphql',
+            'security', 'encryption', 'authentication', 'authorization', 'oauth', 'jwt',
+            
+            # Monitoring & Observability
+            'monitoring', 'logging', 'metrics', 'alerting', 'prometheus', 'grafana', 'kibana',
+            
+            # HPC & Advanced Computing
+            'hpc', 'slurm', 'pbs', 'torque', 'maui', 'moab', 'condor', 'htcondor', 'sge', 'lsf',
+            'mpi', 'openmpi', 'mpich', 'openmp', 'omp', 'cuda', 'hip', 'rocm', 'opencl',
+            'nvidia', 'amd', 'gpu', 'parallel computing', 'distributed computing',
+            'infiniband', 'ethernet', 'rdma', 'roce', 'mellanox',
+            'lustre', 'gpfs', 'beegfs', 'ceph', 'glusterfs', 'nfs',
+            'vtune', 'perf', 'gprof', 'valgrind', 'advisor', 'tau', 'scorep',
+            'linpack', 'hpl', 'hpcg', 'npb', 'nas', 'stream', 'bandwidth',
+            
+            # Hybrid Cloud & Cloud Native
+            'hybrid-cloud', 'multi-cloud', 'cloudbursting', 'on-premise', 'edge computing',
+            'istio', 'linkerd', 'consul', 'envoy', 'microservices', 'service mesh',
+            'terraform', 'ansible', 'chef', 'puppet', 'helm', 'kustomize',
+            'cloud-native', 'cncf', 'prometheus', 'grafana', 'jaeger', 'fluent',
+            'nginx', 'haproxy', 'f5', 'cdn', 'load balancer',
+            'elasticsearch', 'kibana', 'logstash', 'datadog', 'newrelic', 'splunk',
+            'appdynamics', 'dynatrace',
+            
+            # Data Formats & Files
+            'json', 'yaml', 'xml', 'csv', 'parquet', 'avro', 'pickle', 'hdf5',
+            
+            # HFT & Low-Latency Computing
+            'fpga', 'asic', 'smartnic', 'tick-to-trade', 'cpu pinning', 'numa',
+            'kernel bypass', 'userspace', 'dpdk', 'sr-iov', 'cut-through',
+            'packet pacing', 'qos', 'iwarp', 'omnipath', '100gig', '400gig',
+            'connectx', 'ddr4', 'ddr5', 'lrdimm', 'rdimm', 'ecc', 'nvme',
+            'iops', 'optane', 'xeon', 'epyc', 'skylake', 'avx', 'simd',
+            'hyperthreading', 'smt', 'turbo boost',
+            
+            # Datacenter Infrastructure
+            '1u', '2u', '4u', 'top-of-rack', 'tor', 'spine-leaf', 'fat-tree',
+            'clos', 'non-blocking', 'bisection bandwidth', 'pdu', 'ups',
+            'hot-swap', 'n+1', 'liquid cooling', 'immersion cooling', 'crac',
+            'in-row cooling', 'raised floor', 'hot aisle', 'cold aisle',
+            
+            # System Management & Monitoring
+            'ipmi', 'idrac', 'ilo', 'bmc', 'out-of-band', 'oob', 'snmp',
+            'nagios', 'zabbix', 'ganglia',
+            
+            # Trading & Performance
+            'microsecond', 'nanosecond', 'picosecond', 'latency', 'jitter',
+            'deterministic', 'real-time', 'colocation', 'colo', 'dark pool',
+            'matching engine', 'feed handler', 'market making', 'arbitrage',
+            'algo trading',
+            
+            # Network Protocols
+            'tcp', 'udp', 'multicast', 'unicast', 'igmp', 'pim', 'vlan',
+            'vxlan', 'bgp', 'ospf',
+            
+            # Memory & Optimization
+            'shared memory', 'memory-mapped', 'mmap', 'zero-copy', 'lock-free',
+            'wait-free', 'atomic operations', 'compare-and-swap', 'cas',
+            'memory barriers', 'cache coherency', 'false sharing',
+            
+            # System Tuning
+            'cpu governor', 'performance governor', 'powersave', 'ondemand',
+            'dvfs', 'frequency scaling', 'interrupt affinity', 'irq', 'softirq',
+            'tasklet', 'napi'
         ]
     }
 }
