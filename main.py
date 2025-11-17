@@ -53,6 +53,9 @@ class SpeechTranscriptionApp:
         self.flac_available = None  # Will be checked on first use
         self.google_fallback_enabled = True
         
+        # Font size tracking
+        self.current_font_size = 12  # Default font size
+        
         # Audio validation settings
         self.audio_validation_enabled = True
         self.validation_failures = 0
@@ -232,67 +235,89 @@ class SpeechTranscriptionApp:
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(1, weight=1)
         
-        # Control panel
+        # Control panel - organized in two rows
         control_frame = ttk.Frame(main_frame)
         control_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        self.listen_button = ttk.Button(control_frame, text="Start Listening", 
+        # First row - Action buttons and font controls
+        top_row = ttk.Frame(control_frame)
+        top_row.pack(fill=tk.X, pady=(0, 5))
+        
+        self.listen_button = ttk.Button(top_row, text="Start Listening", 
                                       command=self.toggle_listening)
         self.listen_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.pause_button = ttk.Button(control_frame, text="Pause Listening", 
+        self.pause_button = ttk.Button(top_row, text="Pause Listening", 
                                      command=self.toggle_pause, state=tk.DISABLED)
         self.pause_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.clear_button = ttk.Button(control_frame, text="Clear Text", 
+        self.clear_button = ttk.Button(top_row, text="Clear Text", 
                                      command=self.clear_transcription)
         self.clear_button.pack(side=tk.LEFT, padx=(0, 10))
         
         # Cost reset button
-        self.cost_reset_button = ttk.Button(control_frame, text="Reset Cost", 
+        self.cost_reset_button = ttk.Button(top_row, text="Reset Cost", 
                                            command=self.reset_session_cost)
         self.cost_reset_button.pack(side=tk.LEFT, padx=(0, 10))
         
-        self.status_label = ttk.Label(control_frame, text="Status: Ready")
-        self.status_label.pack(side=tk.LEFT, padx=(20, 0))
+        # Font size controls
+        font_frame = ttk.Frame(top_row)
+        font_frame.pack(side=tk.LEFT, padx=(20, 0))
+        
+        ttk.Label(font_frame, text="Font Size:").pack(side=tk.LEFT)
+        
+        self.decrease_font_button = ttk.Button(font_frame, text="A-", 
+                                             command=self.decrease_font_size, width=3)
+        self.decrease_font_button.pack(side=tk.LEFT, padx=(5, 2))
+        
+        self.increase_font_button = ttk.Button(font_frame, text="A+", 
+                                             command=self.increase_font_size, width=3)
+        self.increase_font_button.pack(side=tk.LEFT, padx=(2, 0))
+        
+        # Second row - Status labels and settings
+        bottom_row = ttk.Frame(control_frame)
+        bottom_row.pack(fill=tk.X)
+        
+        self.status_label = ttk.Label(bottom_row, text="Status: Ready")
+        self.status_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # Audio status display
-        self.audio_status_label = ttk.Label(control_frame, text="Audio Status: Default Microphone")
-        self.audio_status_label.pack(side=tk.LEFT, padx=(20, 0))
+        self.audio_status_label = ttk.Label(bottom_row, text="Audio Status: Default Microphone")
+        self.audio_status_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # AI toggle checkbox
         self.ai_enabled_var = tk.BooleanVar(value=True)
         self.ai_checkbox = ttk.Checkbutton(
-            control_frame, 
+            bottom_row, 
             text="Enable AI Analysis", 
             variable=self.ai_enabled_var,
             command=self.on_ai_toggle
         )
-        self.ai_checkbox.pack(side=tk.LEFT, padx=(20, 0))
+        self.ai_checkbox.pack(side=tk.LEFT, padx=(0, 20))
         
         # OpenAI status indicator
         openai_status = "OpenAI: Configured" if (OPENAI_AVAILABLE and openai_analyzer.is_available()) else "OpenAI: Template Mode"
-        self.openai_status_label = ttk.Label(control_frame, text=openai_status)
-        self.openai_status_label.pack(side=tk.LEFT, padx=(20, 0))
+        self.openai_status_label = ttk.Label(bottom_row, text=openai_status)
+        self.openai_status_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # Cost tracking
         self.session_cost = 0.0
-        self.cost_label = ttk.Label(control_frame, text="Session Cost: $0.00")
-        self.cost_label.pack(side=tk.LEFT, padx=(20, 0))
+        self.cost_label = ttk.Label(bottom_row, text="Session Cost: $0.00")
+        self.cost_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # API call tracking
         self.api_call_count = 0
-        self.api_counter_label = ttk.Label(control_frame, text="API Calls: 0")
-        self.api_counter_label.pack(side=tk.LEFT, padx=(20, 0))
+        self.api_counter_label = ttk.Label(bottom_row, text="API Calls: 0")
+        self.api_counter_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # AI analysis status indicator
-        self.ai_status_label = ttk.Label(control_frame, text="AI Status: Ready")
-        self.ai_status_label.pack(side=tk.LEFT, padx=(20, 0))
+        self.ai_status_label = ttk.Label(bottom_row, text="AI Status: Ready")
+        self.ai_status_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # Question type indicator
-        self.question_type_label = ttk.Label(control_frame, text="Type: None", 
+        self.question_type_label = ttk.Label(bottom_row, text="Type: None", 
                                            font=("Arial", 9), foreground="green")
-        self.question_type_label.pack(side=tk.LEFT, padx=(10, 0))
+        self.question_type_label.pack(side=tk.LEFT, padx=(0, 0))
         
         # Create resizable paned window for transcription and topic areas
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
@@ -308,7 +333,7 @@ class SpeechTranscriptionApp:
             transcription_frame, 
             wrap=tk.WORD, 
             height=15,
-            font=("Arial", 12)
+            font=("Arial", self.current_font_size)
         )
         self.transcription_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
@@ -330,7 +355,7 @@ class SpeechTranscriptionApp:
             topic_frame,
             wrap=tk.WORD,
             height=15,
-            font=("Arial", 10),
+            font=("Arial", max(8, self.current_font_size - 2)),
             state=tk.DISABLED
         )
         self.topic_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -345,7 +370,7 @@ class SpeechTranscriptionApp:
             ai_frame,
             wrap=tk.WORD,
             height=15,
-            font=("Arial", 10),
+            font=("Arial", max(8, self.current_font_size - 2)),
             state=tk.DISABLED
         )
         self.ai_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -2125,6 +2150,28 @@ class SpeechTranscriptionApp:
             self.ai_analysis_running = False
             self.transcription_buffer = ""
             self.pending_ai_analysis = False
+    
+    def increase_font_size(self):
+        """Increase font size for all text widgets"""
+        if self.current_font_size < 24:  # Maximum font size limit
+            self.current_font_size += 1
+            self.update_all_fonts()
+    
+    def decrease_font_size(self):
+        """Decrease font size for all text widgets"""
+        if self.current_font_size > 8:  # Minimum font size limit
+            self.current_font_size -= 1
+            self.update_all_fonts()
+    
+    def update_all_fonts(self):
+        """Update font size for all text widgets"""
+        # Update main transcription text
+        self.transcription_text.config(font=("Arial", self.current_font_size))
+        
+        # Update topic and AI text with slightly smaller font
+        smaller_font_size = max(8, self.current_font_size - 2)
+        self.topic_text.config(font=("Arial", smaller_font_size))
+        self.ai_text.config(font=("Arial", smaller_font_size))
         
         # Cancel any pending analysis
         if self.pending_analysis:
