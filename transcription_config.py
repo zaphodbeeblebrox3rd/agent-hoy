@@ -182,6 +182,8 @@ LANGUAGE_MODELS = {
             # Storage & File Systems
             'shared storage', 'cluster file system', 'gfs', 'gfs2', 'ocfs',
             'cluster lvm', 'multipath', 'alua', 'raw device', 'block device',
+            'file transfer protocol', 'ftp', 'sftp', 'scp', 'rsync', 'nfs',
+            'cifs', 'smb',
             
             # Monitoring & SLA
             'sla', 'slo', 'sli', 'mttr', 'mtbf', 'uptime', 'downtime',

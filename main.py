@@ -184,7 +184,11 @@ class SpeechTranscriptionApp:
                 r'\b(troubleshoot|debug|fix|solve|resolve|repair)\b',
                 r'\b(help|stuck|blocked|can\'t|won\'t|doesn\'t work)\b',
                 r'\b(crash|crashed|hang|hanging|timeout|timeout)\b',
-                r'\b(slow|performance|bottleneck|optimization)\b'
+                r'\b(slow|performance|bottleneck|optimization)\b',
+                r'\b(ipad|tablet|android tablet|samsung tablet|galaxy tab)\b.*\b(repair|fix|broken|cracked|not working|issue|problem)\b',
+                r'\b(screen|display|battery|charging|touchscreen|digitizer|camera|speaker)\b.*\b(repair|replace|broken|not working|issue|problem)\b',
+                r'\b(water damage|liquid damage|cracked screen|broken screen|dead pixel|ghost touch|unresponsive)\b',
+                r'\b(not charging|battery drain|overheating|boot loop|won\'t turn on|stuck on logo)\b'
             ]
         }
         
@@ -213,7 +217,8 @@ class SpeechTranscriptionApp:
             'ruby': ['ruby', 'rails', 'gem', 'bundle', 'rake', 'irb', 'erb', 'haml', 'sass', 'scss', 'coffeescript', 'sinatra', 'rack', 'activerecord', 'migration', 'controller', 'model', 'view', 'route', 'middleware', 'rspec', 'cucumber', 'capybara'],
             'shell_scripting': ['bash', 'zsh', 'shell', 'scripting', 'command line', 'terminal', 'cli', 'alias', 'function', 'export', 'source', 'exec', 'fork', 'pipe', 'redirect', 'stdin', 'stdout', 'stderr', 'environment', 'variable', 'subshell', 'job control', 'signal', 'trap', 'cron', 'at', 'systemd'],
             'lua': ['lua', 'luajit', 'coroutine', 'metatable', 'closure', 'upvalue', 'require', 'module', 'package', 'table', 'string', 'math', 'io', 'os', 'debug', 'lua c api', 'embedding', 'scripting language'],
-            'powershell': ['powershell', 'ps1', 'cmdlet', 'module', 'pipeline', 'object', 'variable', 'function', 'script', 'parameter', 'switch', 'foreach', 'where', 'select', 'sort', 'group', 'measure', 'format', 'export', 'import', 'get', 'set', 'new', 'remove', 'invoke']
+            'powershell': ['powershell', 'ps1', 'cmdlet', 'module', 'pipeline', 'object', 'variable', 'function', 'script', 'parameter', 'switch', 'foreach', 'where', 'select', 'sort', 'group', 'measure', 'format', 'export', 'import', 'get', 'set', 'new', 'remove', 'invoke'],
+            'ipad_tablet_repair': ['ipad', 'tablet', 'android tablet', 'samsung tablet', 'galaxy tab', 'pixel tablet', 'fire tablet', 'lenovo tablet', 'screen repair', 'display repair', 'battery replacement', 'charging port', 'usb-c', 'lightning', 'touchscreen', 'digitizer', 'home button', 'face id', 'touch id', 'camera repair', 'speaker repair', 'water damage', 'cracked screen', 'broken screen', 'dead pixel', 'ghost touch', 'unresponsive touch', 'not charging', 'battery drain', 'overheating', 'boot loop', 'won\'t turn on', 'stuck on logo', 'dfu mode', 'recovery mode', 'factory reset', 'apple pencil', 'smart keyboard', 'magic keyboard', 'ipados', 'ios', 'android os', 'tablet repair', 'device repair', 'mobile repair']
         }
         
         self.setup_ui()
@@ -2052,6 +2057,15 @@ class SpeechTranscriptionApp:
                 'steps': '• Check container status and logs\n• Verify image availability\n• Check resource limits\n• Review container configuration\n• Test network connectivity',
                 'commands': '• docker ps -a\n• docker logs container_id\n• docker exec -it container_id /bin/bash\n• kubectl get pods\n• kubectl describe pod pod_name',
                 'resources': '• Check container logs\n• Review orchestration logs\n• Test with simple containers'
+            }
+        
+        # iPad/Tablet repair issues
+        elif any(word in question_lower for word in ['ipad', 'tablet', 'android tablet', 'samsung tablet', 'galaxy tab', 'pixel tablet', 'fire tablet', 'screen', 'display', 'digitizer', 'touchscreen', 'battery', 'charging', 'charging port', 'usb-c', 'lightning', 'home button', 'face id', 'touch id', 'camera', 'speaker', 'microphone', 'water damage', 'cracked', 'broken screen', 'dead pixel', 'ghost touch', 'unresponsive', 'not charging', 'battery drain', 'overheating', 'boot loop', 'won\'t turn on', 'stuck on logo', 'dfu mode', 'recovery mode', 'factory reset', 'apple pencil', 'smart keyboard', 'magic keyboard']):
+            return {
+                'approach': 'iPad and tablet repair troubleshooting',
+                'steps': '• Identify the specific issue (screen, battery, charging, software, etc.)\n• Check for physical damage (cracks, water damage, dents)\n• Test basic functions (power, volume, buttons, touch response)\n• Check software status (iOS/iPadOS version, update availability)\n• Verify charging accessories and ports\n• Test in safe mode or recovery mode if needed\n• Check for warranty status before attempting repairs\n• Document symptoms and error messages',
+                'commands': 'IPAD/IPHONE DIAGNOSTICS:\n• Settings > General > About (check model, iOS version, serial number)\n• Settings > Battery (check battery health and usage)\n• Settings > Privacy & Security > Analytics & Improvements > Analytics Data (check crash logs)\n• Force restart: Press and release Volume Up, then Volume Down, then hold Power button\n• DFU Mode: Connect to computer, hold Power + Home (or Volume Down on newer models) for 10 seconds\n• Recovery Mode: Connect to computer, hold Power + Home (or Volume Down) until recovery screen appears\n• iTunes/Finder: Use to restore, update, or backup device\n\nANDROID TABLET DIAGNOSTICS:\n• Settings > About tablet (check model, Android version, build number)\n• Settings > Battery (check battery usage and health)\n• Settings > Developer Options > USB Debugging (enable for advanced diagnostics)\n• Recovery Mode: Power off, then hold Power + Volume Down (varies by manufacturer)\n• Fastboot Mode: Power off, then hold Power + Volume Down (for some devices)\n• ADB commands: adb devices, adb logcat, adb shell\n• Factory Reset: Settings > System > Reset > Factory data reset\n\nCOMMON REPAIR STEPS:\n• Screen replacement: Remove broken screen, disconnect cables, install new screen\n• Battery replacement: Remove old battery, install new battery, calibrate\n• Charging port repair: Clean port, check for debris, replace if damaged\n• Water damage: Power off immediately, remove from water, dry thoroughly, check for corrosion',
+                'resources': '• Check device warranty status (Apple Support, Samsung Support, etc.)\n• Review repair guides: iFixit.com, YouTube repair tutorials\n• Check for known issues: Apple Support Communities, XDA Developers, Reddit\n• Test with different charging cables and adapters\n• Check for software updates: Settings > General > Software Update\n• Backup device before attempting repairs: iCloud, iTunes, or Android backup\n• Use genuine parts when possible for best compatibility\n• Consider professional repair for complex issues (logic board, Face ID, etc.)'
             }
         
         # General troubleshooting
