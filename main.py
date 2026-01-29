@@ -913,29 +913,46 @@ class SpeechTranscriptionApp:
     
     def highlight_keywords(self):
         """Highlight detected keywords in the transcription"""
-        # Get current text
-        current_text = self.transcription_text.get("1.0", tk.END)
-        
-        # Clear existing tags
-        for tag in self.transcription_text.tag_names():
-            self.transcription_text.tag_remove(tag, "1.0", tk.END)
-        
-        # Configure keyword highlighting
-        self.transcription_text.tag_configure("keyword", 
-                                            background="yellow", 
-                                            foreground="black",
-                                            underline=True)
-        
-        # Find and highlight keywords
-        for category, keywords in self.tech_keywords.items():
-            for keyword in keywords:
-                pattern = r'\b' + re.escape(keyword) + r'\b'
-                matches = re.finditer(pattern, current_text, re.IGNORECASE)
-                for match in matches:
-                    start_pos = f"1.0+{match.start()}c"
-                    end_pos = f"1.0+{match.end()}c"
-                    self.transcription_text.tag_add("keyword", start_pos, end_pos)
-                    self.transcription_text.tag_add(f"keyword_{category}", start_pos, end_pos)
+        try:
+            # Clear existing keyword tags (but keep other tags like "sel")
+            tags_to_remove = [tag for tag in self.transcription_text.tag_names() 
+                            if tag.startswith("keyword")]
+            for tag in tags_to_remove:
+                self.transcription_text.tag_remove(tag, "1.0", tk.END)
+            
+            # Configure keyword highlighting
+            self.transcription_text.tag_configure("keyword", 
+                                                background="yellow", 
+                                                foreground="black",
+                                                underline=True)
+            
+            # Get current text for word boundary checking
+            current_text = self.transcription_text.get("1.0", tk.END)
+            if not current_text.strip():
+                return  # No text to highlight
+            
+            # Find and highlight keywords using regex with word boundaries
+            for category, keywords in self.tech_keywords.items():
+                for keyword in keywords:
+                    # Use regex to find word boundaries in the text
+                    pattern = r'\b' + re.escape(keyword) + r'\b'
+                    matches = list(re.finditer(pattern, current_text, re.IGNORECASE))
+                    
+                    # For each match, add tags using character offset (most reliable)
+                    for match in matches:
+                        try:
+                            start_pos = f"1.0+{match.start()}c"
+                            end_pos = f"1.0+{match.end()}c"
+                            self.transcription_text.tag_add("keyword", start_pos, end_pos)
+                            self.transcription_text.tag_add(f"keyword_{category}", start_pos, end_pos)
+                        except tk.TclError as e:
+                            # Skip if position is invalid
+                            print(f"Warning: Could not add tag for keyword '{keyword}' at position {match.start()}: {e}")
+                            continue
+        except Exception as e:
+            print(f"Error highlighting keywords: {e}")
+            import traceback
+            traceback.print_exc()
     
     def on_text_click(self, event):
         """Handle clicks on transcription text"""
@@ -2142,6 +2159,12 @@ class SpeechTranscriptionApp:
     def clear_transcription(self):
         """Clear the transcription text and all analysis panes"""
         self.transcription_text.delete("1.0", tk.END)
+        
+        # Clear all keyword tags
+        tags_to_remove = [tag for tag in self.transcription_text.tag_names() 
+                         if tag.startswith("keyword")]
+        for tag in tags_to_remove:
+            self.transcription_text.tag_remove(tag, "1.0", tk.END)
         
         # Clear topic explanation pane
         self.topic_text.config(state=tk.NORMAL)
