@@ -12,6 +12,9 @@ PyAudio>=0.2.11
 # Network and HTTP requests
 requests>=2.25.0
 
+# Audio processing
+numpy>=1.21.0
+
 # Offline speech recognition (recommended for offline capabilities)
 vosk>=0.3.45
 pocketsphinx>=5.0.0

@@ -16,37 +16,59 @@ A Python application that provides real-time speech transcription with interacti
 ## Installation
 
 ### Prerequisites
-- **Miniconda** or **Anaconda** (recommended for easy dependency management)
-- **Python 3.9-3.12** (3.11 recommended)
+- **UV** (fast Python package installer) - Install from [https://github.com/astral-sh/uv](https://github.com/astral-sh/uv)
+  - **Linux/macOS**: `curl -LsSf https://astral.sh/uv/install.sh | sh`
+  - **Windows**: `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"`
+- **Python 3.9-3.12** (3.11 recommended) - UV can install Python automatically if needed
 - **FLAC audio converter** (required for Google Speech Recognition)
 
-### Quick Start with Conda
+### Quick Start with UV
 
 **Option 1: Automated Setup (Recommended)**
-```bash
-# Linux/macOS
-git clone <repository-url>
-cd agent-hoy
-./setup_conda.sh
-
-# Windows
-git clone <repository-url>
-cd agent-hoy
-setup_conda.bat
-```
-
-**Option 2: Manual Setup**
 ```bash
 # Clone the repository
 git clone <repository-url>
 cd agent-hoy
 
-# Create and activate conda environment
-conda env create -f environment.yaml
-conda activate agent-hoy
+# Install system dependencies first (required for PyAudio)
+# Ubuntu/Debian:
+sudo apt-get install portaudio19-dev python3-pyaudio flac
+
+# CentOS/RHEL:
+sudo yum install portaudio-devel flac
+
+# macOS:
+brew install portaudio flac
+
+# Windows:
+# Install FLAC via Chocolatey: choco install flac
+# PyAudio should install automatically
+
+# Create virtual environment with Python 3.11 and install dependencies with UV
+uv venv .venv --python 3.11
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -r requirements.txt
 
 # Run the application
 python main.py
+```
+
+**Option 2: Using UV's Built-in Virtual Environment Management**
+```bash
+# Clone the repository
+git clone <repository-url>
+cd agent-hoy
+
+# Install system dependencies (see Option 1 above)
+
+# Create virtual environment with Python 3.11 (UV will manage it automatically)
+uv venv .venv --python 3.11
+
+# Install dependencies (UV manages the venv automatically when using uv run)
+uv run --python 3.11 pip install -r requirements.txt
+
+# Run the application (UV will use the virtual environment automatically)
+uv run --python 3.11 python main.py
 ```
 
 **Note:** FLAC is required for Google Speech Recognition. If you encounter FLAC errors:
@@ -54,35 +76,24 @@ python main.py
 - **Linux**: `sudo apt-get install flac`
 - **macOS**: `brew install flac`
 
-The application will fallback to alternative recognition methods if FLAC is not available. 
-
-### Alternative: Manual Installation
-
-If you prefer pip installation:
-
-1. **Install system dependencies first**:
-   - **Ubuntu/Debian**: `sudo apt-get install portaudio19-dev python3-pyaudio`
-   - **CentOS/RHEL**: `sudo yum install portaudio-devel`
-   - **macOS**: `brew install portaudio`
-   - **Windows**: PyAudio should install automatically
-
-2. **Install Python dependencies**:
-   ```bash
-   pip install -r requirements.txt
-   ```
+The application will fallback to alternative recognition methods if FLAC is not available.
 
 ## Usage
 
 ### Starting the Application
 
-1. **Activate the conda environment**:
+1. **Activate the virtual environment** (if using manual setup):
    ```bash
-   conda activate agent-hoy
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
    ```
 
 2. **Run the application**:
    ```bash
+   # If virtual environment is activated:
    python main.py
+   
+   # Or use UV to run automatically:
+   uv run python main.py
    ```
 
 ### Using the Application
@@ -230,17 +241,20 @@ The application recognizes and provides explanations for:
 
 ### Common Issues
 
-**Environment Creation Fails**:
+**UV Installation Issues**:
 ```bash
-# Update conda first
-conda update conda
-conda env create -f environment.yaml
+# Update UV to latest version
+uv self update
+
+# If Python version issues occur, UV can install Python automatically:
+uv python install 3.11
 ```
 
 **PyAudio Issues**:
 ```bash
-# Conda should handle this automatically, but if issues persist:
-conda install -c conda-forge pyaudio
+# Ensure system dependencies are installed first (see Installation section)
+# Then reinstall PyAudio:
+uv pip install --force-reinstall PyAudio
 ```
 
 **Microphone Not Working**:
@@ -250,23 +264,30 @@ conda install -c conda-forge pyaudio
 
 **Offline Mode Not Working**:
 - Check internet connection
-- Verify vosk and pocketsphinx are installed: `conda list | grep -E "(vosk|pocketsphinx)"`
+- Verify vosk and pocketsphinx are installed: `uv pip list | grep -E "(vosk|pocketsphinx)"`
 
 ### Environment Management
 
-**Remove Environment**:
+**Recreate Virtual Environment**:
 ```bash
-conda env remove -n agent-hoy
+# Remove existing environment
+rm -rf .venv  # On Windows: rmdir /s .venv
+
+# Create new environment with Python 3.11 and install dependencies
+uv venv .venv --python 3.11
+source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+uv pip install -r requirements.txt
 ```
 
-**Update Environment**:
+**Update Dependencies**:
 ```bash
-conda env update -f environment.yaml
+# Update all packages to latest compatible versions
+uv pip install --upgrade -r requirements.txt
 ```
 
-**Export Environment**:
+**Check Installed Packages**:
 ```bash
-conda env export > environment.yaml
+uv pip list
 ```
 
 ## Customization
