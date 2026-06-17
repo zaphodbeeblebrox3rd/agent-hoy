@@ -6,142 +6,168 @@ Test script for OpenAI integration
 import os
 import sys
 
+
 def test_openai_imports():
-    """Test if OpenAI modules can be imported"""
     print("Testing OpenAI integration...")
-    
     try:
         from openai_config import openai_config
-        print("✓ OpenAI config imported successfully")
+        print("OK openai_config imported")
     except ImportError as e:
-        print(f"✗ Failed to import openai_config: {e}")
+        print(f"FAIL openai_config: {e}")
         return False
-    
+
     try:
         from openai_integration import openai_analyzer
-        print("✓ OpenAI analyzer imported successfully")
+        print("OK openai_analyzer imported")
     except ImportError as e:
-        print(f"✗ Failed to import openai_analyzer: {e}")
+        print(f"FAIL openai_analyzer: {e}")
         return False
-    
+
     return True
 
+
 def test_openai_configuration():
-    """Test OpenAI configuration"""
     print("\nTesting OpenAI configuration...")
-    
     try:
         from openai_config import openai_config
-        
+
         print(f"API Key configured: {openai_config.is_configured()}")
         print(f"Model: {openai_config.model}")
+        print(f"Responses API: {openai_config.use_responses_api}")
+        print(f"Streaming: {openai_config.stream_responses}")
         print(f"Max tokens: {openai_config.max_tokens}")
-        print(f"Temperature: {openai_config.temperature}")
-        
+
         if openai_config.is_configured():
-            print("✓ OpenAI is properly configured")
+            print("OK OpenAI is properly configured")
             return True
-        else:
-            print("⚠ OpenAI not configured - will use template fallback")
-            print("  Set OPENAI_API_KEY environment variable or create openai_key.txt")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Configuration test failed: {e}")
+
+        print("WARN OpenAI not configured - will use template fallback")
         return False
+    except Exception as e:
+        print(f"FAIL configuration test: {e}")
+        return False
+
+
+def test_rollback_flags():
+    print("\nTesting API rollback configuration...")
+    try:
+        from openai_config import OpenAIConfig
+
+        os.environ["USE_RESPONSES_API"] = "false"
+        os.environ["OPENAI_MODEL"] = "gpt-4o-mini"
+        cfg = OpenAIConfig()
+        assert cfg.use_responses_api is False
+        assert cfg.model == "gpt-4o-mini"
+        print("OK rollback env vars respected")
+
+        del os.environ["USE_RESPONSES_API"]
+        del os.environ["OPENAI_MODEL"]
+        return True
+    except Exception as e:
+        print(f"FAIL rollback test: {e}")
+        return False
+
 
 def test_openai_analyzer():
-    """Test OpenAI analyzer functionality"""
     print("\nTesting OpenAI analyzer...")
-    
     try:
         from openai_integration import openai_analyzer
-        
+
         print(f"OpenAI available: {openai_analyzer.is_available()}")
-        
         if openai_analyzer.is_available():
-            print("✓ OpenAI analyzer is ready")
+            print("OK OpenAI analyzer is ready")
             return True
-        else:
-            print("⚠ OpenAI analyzer not available - will use template fallback")
-            return False
-            
-    except Exception as e:
-        print(f"✗ Analyzer test failed: {e}")
+
+        print("WARN OpenAI analyzer not available - will use template fallback")
         return False
+    except Exception as e:
+        print(f"FAIL analyzer test: {e}")
+        return False
+
 
 def test_template_fallback():
-    """Test template fallback functionality"""
     print("\nTesting template fallback...")
-    
     try:
         from openai_integration import openai_analyzer
-        
-        # Test topic analysis
+
         test_explanation = {
-            'title': 'Python Programming',
-            'summary': 'Python is a versatile programming language',
-            'challenges': 'Memory management, performance optimization',
-            'commands': 'python script.py, pip install package'
+            "title": "Python Programming",
+            "summary": "Python is a versatile programming language",
+            "challenges": "Memory management, performance optimization",
+            "commands": "python script.py, pip install package",
         }
-        
-        result = openai_analyzer.generate_topic_analysis('python', test_explanation)
-        print("✓ Template fallback working for topic analysis")
-        
-        # Test troubleshooting analysis
+        result = openai_analyzer._get_fallback_topic_analysis("python", test_explanation)
+        assert isinstance(result, str) and len(result) > 0
+        print("OK template fallback for topic analysis")
+
         test_suggestions = {
-            'approach': 'Systematic debugging',
-            'steps': 'Check logs, verify configuration',
-            'commands': 'grep error /var/log/app.log'
+            "approach": "Systematic debugging",
+            "steps": "Check logs, verify configuration",
+            "commands": "grep error /var/log/app.log",
         }
-        
-        result = openai_analyzer.generate_troubleshooting_analysis(
-            'My application is crashing', test_suggestions
+        result = openai_analyzer._get_fallback_troubleshooting_analysis(
+            "My application is crashing", test_suggestions
         )
-        print("✓ Template fallback working for troubleshooting analysis")
-        
+        assert isinstance(result, str) and len(result) > 0
+        print("OK template fallback for troubleshooting analysis")
         return True
-        
     except Exception as e:
-        print(f"✗ Template fallback test failed: {e}")
+        print(f"FAIL template fallback test: {e}")
         return False
 
+
+def test_cost_calculation():
+    print("\nTesting cost calculation...")
+    try:
+        from openai_integration import openai_analyzer
+        from openai_config import openai_config
+
+        cost = openai_analyzer._calculate_cost(1000, 500)
+        assert cost >= 0
+        pricing = openai_config.get_model_pricing()
+        assert "input" in pricing and "output" in pricing
+        print(f"OK cost calculation for {openai_config.model}: ${cost}")
+        return True
+    except Exception as e:
+        print(f"FAIL cost calculation: {e}")
+        return False
+
+
 def main():
-    """Run all tests"""
     print("OpenAI Integration Test Suite")
     print("=" * 40)
-    
+
     tests = [
         test_openai_imports,
         test_openai_configuration,
+        test_rollback_flags,
         test_openai_analyzer,
-        test_template_fallback
+        test_template_fallback,
+        test_cost_calculation,
     ]
-    
+
     passed = 0
-    total = len(tests)
-    
     for test in tests:
         try:
             if test():
                 passed += 1
         except Exception as e:
-            print(f"✗ Test failed with exception: {e}")
-    
+            print(f"FAIL test exception: {e}")
+
+    total = len(tests)
     print("\n" + "=" * 40)
     print(f"Test Results: {passed}/{total} tests passed")
-    
+
     if passed == total:
-        print("🎉 All tests passed! OpenAI integration is ready.")
-    elif passed >= total - 1:
-        print("✅ Most tests passed. OpenAI integration should work with fallback.")
+        print("All tests passed.")
+    elif passed >= total - 2:
+        print("Most tests passed. Integration should work with fallback.")
     else:
-        print("⚠️ Some tests failed. Check configuration and dependencies.")
-    
-    print("\nNext steps:")
-    print("1. Set OPENAI_API_KEY environment variable for full functionality")
-    print("2. Run the main application: python main.py")
-    print("3. Check the status bar for OpenAI configuration status")
+        print("Some tests failed. Check configuration and dependencies.")
+
+    return passed >= total - 2
+
 
 if __name__ == "__main__":
-    main()
+    success = main()
+    sys.exit(0 if success else 1)

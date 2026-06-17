@@ -1,0 +1,83 @@
+# Technology keyword detection patterns
+# [category] header followed by comma-separated keywords or one keyword per line
+
+[python]
+python, py, pip, virtualenv, conda
+
+[docker]
+docker, container, dockerfile, kubernetes, k8s
+
+[aws]
+aws, amazon web services, ec2, s3, lambda, cloudformation
+
+[linux]
+linux, ubuntu, centos, bash, shell, terminal, system, systemd, systemctl, init, service, daemon, process, kernel, grub, bootloader, boot process, booting, boot sequence, bios, uefi, efi, power, power management, acpi, suspend, hibernate, shutdown, reboot, initramfs, initrd, fstab, mount, umount, filesystem, ext4, xfs, btrfs, zfs, lvm, logical volume, partition, disk, drive, ssd, hdd, raid, mdadm, vg, lv, pv, volume group, physical volume
+
+[git]
+git, github, version control, commit, branch, merge
+
+[database]
+database, sql, mysql, postgresql, mongodb, redis
+
+[networking]
+network, networking, tcp, udp, http, https, dns, firewall, iptables, ip, ip address, subnet, gateway, router, routing, route, bridge, vlan, vlan, ethernet, wifi, wireless, wlan, interface, network interface, nic, ifconfig, ip addr, ip link, ip route, ss, netstat, tcpdump, wireshark, packet, packet capture, latency, bandwidth, throughput, mtu, jumbo frames, bonding, team, network bonding, link aggregation, lacp, ospf, bgp, routing protocol, dhcp, static ip, dynamic ip, arp, mac address, port, port forwarding, nat, snat, dnat, proxy, reverse proxy, load balancer, haproxy, nginx, apache
+
+[security]
+security, encryption, ssl, tls, authentication, authorization
+
+[monitoring]
+monitoring, logging, metrics, prometheus, grafana, elk
+
+[ci_cd]
+ci, cd, jenkins, github actions, gitlab, pipeline, terraform
+
+[automation]
+ansible automation controller, automation controller, ansible automation platform, ansible tower, automation controller upgrade, ansible, awx, aap, ansible playbook, playbook, inventory, tower, configuration management, idempot, ansible-galaxy, ansible-vault, red hat ansible
+
+[hft]
+hft, high frequency trading, algorithmic trading, market making, latency, tick data, order book, market data, trading algorithm
+
+[hpc]
+hpc, high performance computing, supercomputing, parallel computing, cluster computing, mpi, openmp, cuda, gpu computing, distributed computing
+
+[network_storage]
+network storage, nas, san, iscsi, nfs, cifs, samba, glusterfs, ceph, distributed storage, object storage, block storage, storage, filesystem, file system, mount point, mount, umount, fstab, automount, autofs, disk, drive, ssd, hdd, nvme, sata, sas, scsi, raid, raid0, raid1, raid5, raid6, raid10, mdadm, lvm, logical volume manager, volume group, logical volume, physical volume, pv, vg, lv, thin provisioning, snapshot, backup, restore, rsync, tar, gzip, compression, deduplication, quota, disk quota, inode, block, extent, journaling, fsck, filesystem check, tune2fs, xfs_admin, zpool, zfs, btrfs
+
+[virtualization]
+virtualization, virtual machine, vm, vmware, vsphere, esxi, hypervisor, kvm, qemu, xen, hyper-v, virtualbox, vagrant, container, containers, docker, podman, lxc, lxd, kubernetes, k8s, openshift, orchestration, vcenter, vsphere client, ovf, ova, template, clone, snapshot, migration, vmotion, storage vmotion, drs, distributed resource scheduler, ha, high availability, fault tolerance, resource pool, datastore, datastore cluster, vswitch, virtual switch, port group, vlan, vxlan, overlay network, bridge network, host network, nat network
+
+[performance]
+performance, latency, throughput, bandwidth, fpga, rdma, roce, infiniband, kernel bypass, dpdk, spdk, zero copy, memory mapping, cpu affinity, numa, cache optimization, vectorization, simd, avx, optimization, profiling, benchmarking, quantum computing, quantum, qubit, quantum algorithm, quantum optimization, quantum annealing, quantum supremacy, quantum advantage, quantum circuit, quantum gate, quantum error correction, quantum coherence, quantum entanglement, quantum superposition
+
+[slurm]
+slurm, squeue, sbatch, srun, sacct, scontrol, sinfo, scancel, salloc, job, jobs, queue, partition, node, nodes, walltime, wall time, time limit, resource, resources, allocation, priority, qos, account, user, group, open ondemand, ondemand, ood, web interface, hpc portal, cluster portal
+
+[pbs_torque]
+pbs, torque, qstat, qsub, qdel, qhold, qrls, pbsnodes, showq, maui, moab, qalter, qselect, qrerun, qmove, qrun, qstop, qstart, qterm, qconfig, pbs_server, pbs_mom, pbs_sched
+
+[computational_jobs]
+computational, compute, hpc, cluster, batch, batch job, parallel, mpi, openmp, threading, multiprocessing, distributed, workload, scheduler, scheduling, queue, pending, running, completed, failed, cancelled, timeout, hung, stuck, slow, performance, bottleneck, resource, memory, cpu, disk, io, network, bandwidth, latency, throughput
+
+[programming]
+programming, coding, scripting, development, software, application, program, code, function, variable, loop, condition, algorithm, data structure, debugging, compilation, execution, runtime, syntax, semantic, library, framework, api, sdk
+
+[c_programming]
+c, c programming, gcc, clang, make, makefile, compiler, linker, header, stdio, stdlib, string, pointer, array, struct, union, enum, malloc, free, memory management, segmentation fault, core dump, gdb, valgrind
+
+[javascript]
+javascript, js, node, nodejs, npm, yarn, react, vue, angular, jquery, typescript, es6, es2015, async, await, promise, callback, closure, prototype, json, ajax, dom, browser, v8, webpack, babel
+
+[ruby]
+ruby, rails, gem, bundle, rake, irb, erb, haml, sass, scss, coffeescript, sinatra, rack, activerecord, migration, rails controller, mvc controller, model, view, route, middleware, rspec, cucumber, capybara
+
+[shell_scripting]
+bash, zsh, shell, scripting, command line, terminal, cli, alias, function, export, source, exec, fork, pipe, redirect, stdin, stdout, stderr, environment, variable, subshell, job control, signal, trap, cron, at, systemd
+
+[lua]
+lua, luajit, coroutine, metatable, closure, upvalue, require, module, package, table, string, math, io, os, debug, lua c api, embedding, scripting language
+
+[powershell]
+powershell, ps1, cmdlet, module, pipeline, object, variable, function, script, parameter, switch, foreach, where, select, sort, group, measure, format, export, import, get, set, new, remove, invoke
+
+[ipad_tablet_repair]
+ipad, tablet, android tablet, samsung tablet, galaxy tab, pixel tablet, fire tablet, lenovo tablet, screen repair, display repair, battery replacement, charging port, usb-c, lightning, touchscreen, digitizer, home button, face id, touch id, camera repair, speaker repair, water damage, cracked screen, broken screen, dead pixel, ghost touch, unresponsive touch, not charging, battery drain, overheating, boot loop, won't turn on, stuck on logo, dfu mode, recovery mode, factory reset, apple pencil, smart keyboard, magic keyboard, ipados, ios, android os, tablet repair, device repair, mobile repair

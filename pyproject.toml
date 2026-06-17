@@ -1,0 +1,38 @@
+[project]
+name = "agent-hoy"
+version = "0.1.0"
+description = "Real-time speech transcription with topic explorer and AI analysis"
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "SpeechRecognition>=3.14.0",
+    "PyAudio>=0.2.14",
+    "requests>=2.32.0",
+    "openai>=1.68.0",
+    "numpy>=1.21.0",
+]
+
+[project.optional-dependencies]
+whisper = [
+    "openai-whisper",
+    "torch>=2.5.0",
+    "torchaudio>=2.5.0",
+]
+offline-stt = [
+    "vosk>=0.3.45",
+    "pocketsphinx>=5.0.0",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu", extra = "whisper" }
+torchaudio = { index = "pytorch-cpu", extra = "whisper" }

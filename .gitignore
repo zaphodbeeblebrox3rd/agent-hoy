@@ -1,7 +1,9 @@
 # Project-specific files
 cache/
 openai_key.txt
-corrections.conf
+# Local config overrides (shipped defaults are conf/*.conf.example)
+conf/*.conf
+.install-profile
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

@@ -6,6 +6,83 @@ This file contains configuration options for different speech recognition servic
 and their respective settings for optimal transcription quality.
 """
 
+import os
+
+# Whisper model: tiny, base, small, medium, large. Leave unset for auto (base on CPU, small on GPU).
+WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "en")
+WHISPER_SAMPLE_RATE = 16000
+WHISPER_INITIAL_PROMPT = (
+    "This is a technical discussion about computer systems, HPC clusters, "
+    "cloud computing, containers, orchestration, and infrastructure. "
+    "Use technical terminology accurately."
+)
+
+# Fast decoding defaults for live microphone chunks (override for accuracy)
+WHISPER_FAST_MODE = os.getenv("WHISPER_FAST_MODE", "true").lower() in ("1", "true", "yes", "on")
+WHISPER_BEAM_SIZE = int(os.getenv("WHISPER_BEAM_SIZE", "1"))
+WHISPER_CONDITION_ON_PREVIOUS = os.getenv(
+    "WHISPER_CONDITION_ON_PREVIOUS",
+    "false" if WHISPER_FAST_MODE else "true",
+).lower() in ("1", "true", "yes", "on")
+
+
+def get_whisper_model() -> str:
+    """Pick a model balanced for the available hardware."""
+    explicit = os.getenv("WHISPER_MODEL", "").strip()
+    if explicit:
+        return explicit
+    if WHISPER_FAST_MODE and not is_cuda_available():
+        return "base"
+    return "small" if is_cuda_available() else "base"
+
+# When online without CUDA, Google STT is usually faster and more accurate on short chunks.
+# When CUDA is available, Whisper on GPU is preferred for low-latency local transcription.
+STT_PREFER_GOOGLE = os.getenv("STT_PREFER_GOOGLE", "").lower() in ("1", "true", "yes", "on")
+STT_PREFER_WHISPER = os.getenv("STT_PREFER_WHISPER", "").lower() in ("1", "true", "yes", "on")
+
+# Microphone capture tuning (lower phrase_time_limit = faster chunks and pause response)
+LISTEN_TIMEOUT = float(os.getenv("LISTEN_TIMEOUT", "0.5"))
+LISTEN_PHRASE_TIME_LIMIT = float(os.getenv("LISTEN_PHRASE_TIME_LIMIT", "3"))
+
+# AI pipeline latency tuning
+QUESTION_COMPLETION_TIMEOUT = float(os.getenv("QUESTION_COMPLETION_TIMEOUT", "1.5"))
+AI_ANALYSIS_THROTTLE_SECONDS = float(os.getenv("AI_ANALYSIS_THROTTLE_SECONDS", "2"))
+HIGHLIGHT_DEBOUNCE_MS = int(os.getenv("HIGHLIGHT_DEBOUNCE_MS", "400"))
+
+_cuda_available = None
+
+
+def is_cuda_available() -> bool:
+    """Return True when PyTorch can use a CUDA GPU."""
+    global _cuda_available
+    if _cuda_available is not None:
+        return _cuda_available
+
+    try:
+        import torch
+
+        _cuda_available = bool(torch.cuda.is_available())
+    except ImportError:
+        _cuda_available = False
+
+    return _cuda_available
+
+
+def should_prefer_whisper(whisper_available: bool, online: bool) -> bool:
+    """
+    Choose Whisper first when a GPU is available for speed, unless explicitly overridden.
+    Without CUDA, prefer Google while online because CPU Whisper is comparatively slow.
+    """
+    if not whisper_available:
+        return False
+    if STT_PREFER_GOOGLE:
+        return False
+    if STT_PREFER_WHISPER:
+        return True
+    if is_cuda_available():
+        return True
+    return not online
+
 # Google Speech Recognition Settings
 GOOGLE_CONFIG = {
     'language': 'en-US',

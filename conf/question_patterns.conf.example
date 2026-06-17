@@ -1,0 +1,28 @@
+# Question detection regex patterns (one per line)
+# Lines starting with # are comments
+
+\b(how|what|why|when|where|which|who)\b.*\?
+\b(can you|could you|would you|should i|do you)\b.*\?
+\b(is there|are there|does|did|will|would)\b.*\?
+\b(help|troubleshoot|debug|fix|solve|resolve)\b.*\?
+\b(problem|issue|error|bug|failing|broken)\b.*\?
+\b(not working|doesn\'t work|won\'t start|can\'t connect)\b.*\?
+\b(how do i|how can i|how to|what\'s the best way)\b.*\?
+\b(any ideas|suggestions|recommendations)\b.*\?
+\b(job|jobs|slurm|squeue|sbatch|srun|sacct)\b.*\?
+\b(open ondemand|ondemand|ood|web interface|hpc portal|cluster portal)\b.*\?
+\b(pbs|torque|qstat|qsub|qdel|pbsnodes|showq|maui|moab)\b.*\?
+\b(slow|timeout|hung|stuck|running too long)\b.*\?
+\b(failed|failure|error|exit code|killed)\b.*\?
+\b(queue|pending|waiting|priority)\b.*\?
+\b(resource|memory|cpu|node|partition)\b.*\?
+\b(why is my|why did my|what happened to)\b.*\?
+\b(code|coding|programming|scripting|development)\b.*\?
+\b(debug|debugging|bug|error|exception|crash)\b.*\?
+\b(compile|compilation|build|make|link)\b.*\?
+\b(syntax|semantic|logic|algorithm)\b.*\?
+\b(memory|leak|segmentation|fault|core dump)\b.*\?
+\b(performance|optimization|profiling|benchmark)\b.*\?
+\b(function|variable|loop|condition|recursion)\b.*\?
+\b(api|library|framework|dependency|package)\b.*\?
+\b(quantum|qubit|quantum algorithm|quantum optimization|quantum annealing|quantum supremacy|quantum advantage|quantum circuit|quantum gate|quantum error correction|quantum coherence|quantum entanglement|quantum superposition)\b.*\?

@@ -1,0 +1,53 @@
+# Question type detection patterns for adaptive AI analysis
+# [section] header followed by one regex pattern per line
+
+[architecture]
+\b(architecture|architectural|design|designing|structure|framework|pattern|patterns)\b
+\b(how should|what\'s the best|recommend|recommendation|approach|strategy)\b
+\b(scalability|scalable|performance|optimization|efficiency)\b
+\b(microservices|monolith|distributed|centralized|decentralized)\b
+\b(component|components|module|modules|service|services)\b
+\b(fault.?tolerant|fault.?tolerance|resilient|resilience|redundant|redundancy)\b
+\b(reproducible|reproducibility|consistent|consistency|reliable|reliability)\b
+\b(hybrid|federated|federation|multi.?cloud|cloud.?burst|burst)\b
+\b(compute|computing|environment|infrastructure|platform)\b
+\b(workload|workloads|job|jobs|execution|scheduling)\b
+\b(split.?brain|failover|fail.?over|high.?availability|ha)\b
+\b(container|containers|bare.?metal|nodes|hardware)\b
+\b(driver|injection|specialized|gpu|gpus|hardware)\b
+\b(licensing|license|open.?source|orchestration|orchestrator)\b
+\b(forensic|traceability|trace|audit|auditing|compliance)\b
+\b(design a|design an|design the|designing a|designing an|designing the)\b
+\b(system design|architecture design|solution design|infrastructure design)\b
+\b(design pattern|design patterns|design principles|design approach)\b
+\b(design strategy|design methodology|design framework)\b
+\b(ui|ux|interface|user experience|usability)\b
+\b(layout|wireframe|mockup|prototype|prototyping)\b
+\b(workflow|process|procedure|methodology|method)\b
+\b(requirements|specification|spec|documentation)\b
+\b(blueprint|plan|planning|roadmap)\b
+
+[policy]
+\b(policy|policies|governance|compliance|regulation|regulatory)\b
+\b(standards|standard|guidelines|guideline|best practices)\b
+\b(approval|approve|review|audit|auditing)\b
+\b(process|procedure|workflow|workflow)\b
+\b(security|security|access|permission|authorization)\b
+
+[security]
+\b(security|secure|securing|vulnerability|vulnerabilities)\b
+\b(authentication|authorization|access|permission|permissions)\b
+\b(encryption|encrypt|decrypt|cipher|cryptography)\b
+\b(firewall|firewalls|intrusion|detection|prevention)\b
+\b(compliance|audit|auditing|penetration|penetration testing)\b
+
+[troubleshooting]
+\b(problem|issue|error|bug|failing|broken|not working)\b
+\b(troubleshoot|debug|fix|solve|resolve|repair)\b
+\b(help|stuck|blocked|can\'t|won\'t|doesn\'t work)\b
+\b(crash|crashed|hang|hanging|timeout|timeout)\b
+\b(slow|performance|bottleneck|optimization)\b
+\b(ipad|tablet|android tablet|samsung tablet|galaxy tab)\b.*\b(repair|fix|broken|cracked|not working|issue|problem)\b
+\b(screen|display|battery|charging|touchscreen|digitizer|camera|speaker)\b.*\b(repair|replace|broken|not working|issue|problem)\b
+\b(water damage|liquid damage|cracked screen|broken screen|dead pixel|ghost touch|unresponsive)\b
+\b(not charging|battery drain|overheating|boot loop|won\'t turn on|stuck on logo)\b

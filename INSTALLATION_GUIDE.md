@@ -1,230 +1,103 @@
 # Installation Guide
 
-This guide helps you install the application and resolve common dependency issues.
+## Quick start with uv
 
-## Quick Start
+### Lite profile (default)
 
-### 1. Install System Dependencies First
-
-**Ubuntu/Debian:**
 ```bash
-sudo apt-get update
-sudo apt-get install portaudio19-dev python3-pyaudio
-sudo apt-get install build-essential
+./setup_uv.sh          # Linux/macOS
+setup_uv.bat           # Windows
 ```
 
-**CentOS/RHEL/Fedora:**
+Or manually:
+
 ```bash
-sudo yum install portaudio-devel
-sudo yum groupinstall "Development Tools"
-# or for newer versions:
-sudo dnf install portaudio-devel
-sudo dnf groupinstall "Development Tools"
+uv python install 3.11
+uv sync
+uv run python test_setup.py
+```
+
+### Full profile (offline Whisper)
+
+```bash
+./setup_uv.sh --full
+setup_uv.bat --full
+```
+
+Or:
+
+```bash
+uv sync --extra whisper
+```
+
+## System dependencies
+
+Install these before `uv sync` if PyAudio or FLAC fail:
+
+**Ubuntu/Debian:**
+
+```bash
+sudo apt-get update
+sudo apt-get install -y portaudio19-dev python3-tk flac ffmpeg build-essential
 ```
 
 **macOS:**
+
 ```bash
-brew install portaudio
+brew install portaudio flac ffmpeg
 ```
 
 **Windows:**
-- PyAudio should install automatically
-- If issues occur, try: `pip install pipwin` then `pipwin install pyaudio`
 
-### 2. Install Python Dependencies
+```powershell
+choco install flac ffmpeg
+```
+
+## Alternative: pip-only install
+
+If uv is unavailable, use the exported requirements file:
 
 ```bash
+python3.11 -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-## Troubleshooting PyAudio Installation
+For Whisper, install torch CPU wheels separately from https://pytorch.org then `pip install openai-whisper`.
 
-### Error: "portaudio.h: No such file or directory"
+## Troubleshooting PyAudio
 
-This means the system audio libraries aren't installed. Follow the system dependency installation above.
+1. Install system portaudio libraries (see above)
+2. Reinstall: `uv sync --reinstall-package pyaudio`
+3. Windows fallback: `pip install pipwin` then `pipwin install pyaudio`
 
-### Alternative PyAudio Installation Methods
+## Docker example
 
-**Method 1: Use conda (Recommended)**
-```bash
-conda install pyaudio
-```
-
-**Method 2: Use pre-compiled wheels**
-```bash
-pip install --only-binary=all PyAudio
-```
-
-**Method 3: Install from source with system libraries**
-```bash
-# Install system dependencies first (see above)
-pip install PyAudio
-```
-
-### Platform-Specific Solutions
-
-#### Ubuntu/Debian
-```bash
-# Install all required system packages
-sudo apt-get update
-sudo apt-get install portaudio19-dev python3-pyaudio python3-dev
-sudo apt-get install build-essential
-sudo apt-get install libasound2-dev
-
-# Then install Python packages
-pip install -r requirements.txt
-```
-
-#### CentOS/RHEL
-```bash
-# Install development tools and audio libraries
-sudo yum groupinstall "Development Tools"
-sudo yum install portaudio-devel
-sudo yum install alsa-lib-devel
-
-# Then install Python packages
-pip install -r requirements.txt
-```
-
-#### macOS
-```bash
-# Install portaudio via Homebrew
-brew install portaudio
-
-# Then install Python packages
-pip install -r requirements.txt
-```
-
-#### Windows
-```bash
-# PyAudio should work automatically
-pip install -r requirements.txt
-
-# If issues occur, try:
-pip install pipwin
-pipwin install pyaudio
-```
-
-## Alternative Installation Methods
-
-### Using Conda (Easiest)
-```bash
-# Create conda environment
-conda create -n agent-hoy python=3.11
-conda activate agent-hoy
-
-# Install packages via conda (handles system dependencies)
-conda install pyaudio
-conda install -c conda-forge speechrecognition
-conda install -c conda-forge vosk
-conda install -c conda-forge pocketsphinx
-
-# Install remaining packages via pip
-pip install requests
-```
-
-### Using Docker (Most Reliable)
-```bash
-# Create Dockerfile
-cat > Dockerfile << EOF
+```dockerfile
 FROM python:3.11-slim
-
-# Install system dependencies
-RUN apt-get update && apt-get install -y \
-    portaudio19-dev \
-    python3-pyaudio \
-    build-essential \
+RUN apt-get update && apt-get install -y portaudio19-dev flac ffmpeg \
     && rm -rf /var/lib/apt/lists/*
-
-# Install Python dependencies
-COPY requirements.txt .
-RUN pip install -r requirements.txt
-
-# Copy application
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+WORKDIR /app
+COPY pyproject.toml uv.lock ./
+RUN uv sync --frozen
 COPY . .
-
-# Run application
-CMD ["python", "main.py"]
-EOF
-
-# Build and run
-docker build -t agent-hoy .
-docker run -it --rm -v /dev/snd:/dev/snd agent-hoy
+CMD ["uv", "run", "python", "main.py"]
 ```
 
-## Testing Installation
+## Testing
 
-### Test PyAudio
-```python
-import pyaudio
-print("PyAudio installed successfully!")
+```bash
+uv run python test_setup.py
+uv run python -c "import pyaudio; print('PyAudio OK')"
+uv run python -c "import speech_recognition as sr; print('SR OK')"
 ```
 
-### Test Speech Recognition
-```python
-import speech_recognition as sr
-r = sr.Recognizer()
-print("SpeechRecognition installed successfully!")
+## Rollback
+
+Switch from Full to Lite:
+
+```bash
+rm -rf .venv
+uv sync
 ```
-
-### Test Offline Recognition
-```python
-import vosk
-print("Vosk installed successfully!")
-```
-
-## Common Issues and Solutions
-
-### Issue 1: "No module named 'pyaudio'"
-**Solution**: Install system dependencies first, then reinstall PyAudio
-
-### Issue 2: "Permission denied" errors
-**Solution**: Use `sudo` for system package installation, but not for pip
-
-### Issue 3: "Compiler not found"
-**Solution**: Install build tools:
-- Ubuntu: `sudo apt-get install build-essential`
-- CentOS: `sudo yum groupinstall "Development Tools"`
-
-### Issue 4: "PortAudio not found"
-**Solution**: Install portaudio development libraries:
-- Ubuntu: `sudo apt-get install portaudio19-dev`
-- CentOS: `sudo yum install portaudio-devel`
-
-## Minimal Installation (No Audio)
-
-If you can't get PyAudio working, you can still use the application for:
-- Keyword detection and explanations
-- Troubleshooting suggestions
-- Cached content
-
-Just comment out the audio-related imports in main.py:
-```python
-# import speech_recognition as sr
-# import pyaudio
-```
-
-## Getting Help
-
-If you're still having issues:
-
-1. **Check your Python version**: `python --version` (should be 3.9-3.12)
-2. **Check your system**: `uname -a` (Linux/macOS/Windows)
-3. **Check installed packages**: `pip list`
-4. **Try conda instead**: Often handles system dependencies better
-
-## Platform-Specific Notes
-
-### Linux (WSL)
-- May need additional audio setup
-- Consider using conda for easier dependency management
-
-### macOS
-- Homebrew is the easiest way to install system dependencies
-- May need to allow microphone permissions
-
-### Windows
-- PyAudio usually installs without issues
-- May need to install Visual Studio Build Tools if compilation fails
-
-The key is installing the system audio libraries first, then the Python packages!

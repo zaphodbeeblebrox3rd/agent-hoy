@@ -23,7 +23,7 @@
 
 ### Phase 1: Whisper Integration (Recommended)
 ```python
-# Add to environment.yaml
+# Add to pyproject.toml optional whisper extra
 - pip:
   - openai-whisper
   - torch
