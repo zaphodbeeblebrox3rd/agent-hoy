@@ -129,6 +129,11 @@ class OpenAIAnalyzer:
         question_type = explanation.get('question_type', 'troubleshooting')
         print(f"DEBUG: OpenAI prompt generation - category: '{category}', question_type: '{question_type}'")
         
+        # Include boot process if available
+        boot_process_info = ""
+        if 'boot_process' in explanation:
+            boot_process_info = f"\nBoot Process Details:\n{explanation.get('boot_process', '')}\n"
+        
         # Create adaptive prompt based on question type
         if question_type == 'architecture':
             prompt = f"""
@@ -138,7 +143,7 @@ class OpenAIAnalyzer:
             Summary: {explanation.get('summary', '')}
             Challenges: {explanation.get('challenges', '')}
             Commands: {explanation.get('commands', '')}
-            
+            {boot_process_info}
             User Question: {explanation.get('context', '')}
             
             Please provide architectural guidance focusing on:
@@ -163,7 +168,7 @@ class OpenAIAnalyzer:
             Summary: {explanation.get('summary', '')}
             Challenges: {explanation.get('challenges', '')}
             Commands: {explanation.get('commands', '')}
-            
+            {boot_process_info}
             User Question: {explanation.get('context', '')}
             
             Please provide security guidance focusing on:
@@ -188,7 +193,7 @@ class OpenAIAnalyzer:
             Summary: {explanation.get('summary', '')}
             Challenges: {explanation.get('challenges', '')}
             Commands: {explanation.get('commands', '')}
-            
+            {boot_process_info}
             User Question: {explanation.get('context', '')}
             
             Please provide:

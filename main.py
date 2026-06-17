@@ -197,16 +197,17 @@ class SpeechTranscriptionApp:
             'python': ['python', 'py', 'pip', 'virtualenv', 'conda'],
             'docker': ['docker', 'container', 'dockerfile', 'kubernetes', 'k8s'],
             'aws': ['aws', 'amazon web services', 'ec2', 's3', 'lambda', 'cloudformation'],
-            'linux': ['linux', 'ubuntu', 'centos', 'bash', 'shell', 'terminal'],
+            'linux': ['linux', 'ubuntu', 'centos', 'bash', 'shell', 'terminal', 'system', 'systemd', 'systemctl', 'init', 'service', 'daemon', 'process', 'kernel', 'grub', 'bootloader', 'boot process', 'booting', 'boot sequence', 'bios', 'uefi', 'efi', 'power', 'power management', 'acpi', 'suspend', 'hibernate', 'shutdown', 'reboot', 'initramfs', 'initrd', 'fstab', 'mount', 'umount', 'filesystem', 'ext4', 'xfs', 'btrfs', 'zfs', 'lvm', 'logical volume', 'partition', 'disk', 'drive', 'ssd', 'hdd', 'raid', 'mdadm', 'vg', 'lv', 'pv', 'volume group', 'physical volume'],
             'git': ['git', 'github', 'version control', 'commit', 'branch', 'merge'],
             'database': ['database', 'sql', 'mysql', 'postgresql', 'mongodb', 'redis'],
-            'networking': ['network', 'tcp', 'udp', 'http', 'https', 'dns', 'firewall'],
+            'networking': ['network', 'networking', 'tcp', 'udp', 'http', 'https', 'dns', 'firewall', 'iptables', 'ip', 'ip address', 'subnet', 'gateway', 'router', 'routing', 'route', 'bridge', 'vlan', 'vlan', 'ethernet', 'wifi', 'wireless', 'wlan', 'interface', 'network interface', 'nic', 'ifconfig', 'ip addr', 'ip link', 'ip route', 'ss', 'netstat', 'tcpdump', 'wireshark', 'packet', 'packet capture', 'latency', 'bandwidth', 'throughput', 'mtu', 'jumbo frames', 'bonding', 'team', 'network bonding', 'link aggregation', 'lacp', 'ospf', 'bgp', 'routing protocol', 'dhcp', 'static ip', 'dynamic ip', 'arp', 'mac address', 'port', 'port forwarding', 'nat', 'snat', 'dnat', 'proxy', 'reverse proxy', 'load balancer', 'haproxy', 'nginx', 'apache'],
             'security': ['security', 'encryption', 'ssl', 'tls', 'authentication', 'authorization'],
             'monitoring': ['monitoring', 'logging', 'metrics', 'prometheus', 'grafana', 'elk'],
             'ci_cd': ['ci', 'cd', 'jenkins', 'github actions', 'gitlab', 'pipeline'],
             'hft': ['hft', 'high frequency trading', 'algorithmic trading', 'market making', 'latency', 'tick data', 'order book', 'market data', 'trading algorithm'],
             'hpc': ['hpc', 'high performance computing', 'supercomputing', 'parallel computing', 'cluster computing', 'mpi', 'openmp', 'cuda', 'gpu computing', 'distributed computing'],
-            'network_storage': ['network storage', 'nas', 'san', 'iscsi', 'nfs', 'cifs', 'samba', 'glusterfs', 'ceph', 'distributed storage', 'object storage', 'block storage'],
+            'network_storage': ['network storage', 'nas', 'san', 'iscsi', 'nfs', 'cifs', 'samba', 'glusterfs', 'ceph', 'distributed storage', 'object storage', 'block storage', 'storage', 'filesystem', 'file system', 'mount point', 'mount', 'umount', 'fstab', 'automount', 'autofs', 'disk', 'drive', 'ssd', 'hdd', 'nvme', 'sata', 'sas', 'scsi', 'raid', 'raid0', 'raid1', 'raid5', 'raid6', 'raid10', 'mdadm', 'lvm', 'logical volume manager', 'volume group', 'logical volume', 'physical volume', 'pv', 'vg', 'lv', 'thin provisioning', 'snapshot', 'backup', 'restore', 'rsync', 'tar', 'gzip', 'compression', 'deduplication', 'quota', 'disk quota', 'inode', 'block', 'extent', 'journaling', 'fsck', 'filesystem check', 'tune2fs', 'xfs_admin', 'zpool', 'zfs', 'btrfs'],
+            'virtualization': ['virtualization', 'virtual machine', 'vm', 'vmware', 'vsphere', 'esxi', 'hypervisor', 'kvm', 'qemu', 'xen', 'hyper-v', 'virtualbox', 'vagrant', 'container', 'containers', 'docker', 'podman', 'lxc', 'lxd', 'kubernetes', 'k8s', 'openshift', 'orchestration', 'vcenter', 'vsphere client', 'ovf', 'ova', 'template', 'clone', 'snapshot', 'migration', 'vmotion', 'storage vmotion', 'drs', 'distributed resource scheduler', 'ha', 'high availability', 'fault tolerance', 'resource pool', 'datastore', 'datastore cluster', 'vswitch', 'virtual switch', 'port group', 'vlan', 'vxlan', 'overlay network', 'bridge network', 'host network', 'nat network'],
             'performance': ['performance', 'latency', 'throughput', 'bandwidth', 'fpga', 'rdma', 'roce', 'infiniband', 'kernel bypass', 'dpdk', 'spdk', 'zero copy', 'memory mapping', 'cpu affinity', 'numa', 'cache optimization', 'vectorization', 'simd', 'avx', 'optimization', 'profiling', 'benchmarking', 'quantum computing', 'quantum', 'qubit', 'quantum algorithm', 'quantum optimization', 'quantum annealing', 'quantum supremacy', 'quantum advantage', 'quantum circuit', 'quantum gate', 'quantum error correction', 'quantum coherence', 'quantum entanglement', 'quantum superposition'],
             'slurm': ['slurm', 'squeue', 'sbatch', 'srun', 'sacct', 'scontrol', 'sinfo', 'scancel', 'salloc', 'job', 'jobs', 'queue', 'partition', 'node', 'nodes', 'walltime', 'wall time', 'time limit', 'resource', 'resources', 'allocation', 'priority', 'qos', 'account', 'user', 'group', 'open ondemand', 'ondemand', 'ood', 'web interface', 'hpc portal', 'cluster portal'],
             'pbs_torque': ['pbs', 'torque', 'qstat', 'qsub', 'qdel', 'qhold', 'qrls', 'pbsnodes', 'showq', 'maui', 'moab', 'qalter', 'qselect', 'qrerun', 'qmove', 'qrun', 'qstop', 'qstart', 'qterm', 'qconfig', 'pbs_server', 'pbs_mom', 'pbs_sched'],
@@ -350,22 +351,7 @@ class SpeechTranscriptionApp:
         self.bottom_paned = ttk.PanedWindow(bottom_frame, orient=tk.HORIZONTAL)
         self.bottom_paned.pack(fill=tk.BOTH, expand=True)
         
-        # Left side - Topic explanation panel
-        topic_frame = ttk.LabelFrame(self.bottom_paned, text="Topic Explanation & Troubleshooting", padding="5")
-        self.bottom_paned.add(topic_frame, weight=1)
-        topic_frame.columnconfigure(0, weight=1)
-        topic_frame.rowconfigure(0, weight=1)
-        
-        self.topic_text = scrolledtext.ScrolledText(
-            topic_frame,
-            wrap=tk.WORD,
-            height=15,
-            font=("Arial", max(8, self.current_font_size - 2)),
-            state=tk.DISABLED
-        )
-        self.topic_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
-        
-        # Right side - AI-driven output panel
+        # Left side - AI-driven output panel
         ai_frame = ttk.LabelFrame(self.bottom_paned, text="AI-Driven Analysis & Suggestions", padding="5")
         self.bottom_paned.add(ai_frame, weight=1)
         ai_frame.columnconfigure(0, weight=1)
@@ -379,6 +365,21 @@ class SpeechTranscriptionApp:
             state=tk.DISABLED
         )
         self.ai_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        
+        # Right side - Topic explanation panel
+        topic_frame = ttk.LabelFrame(self.bottom_paned, text="Topic Explanation & Troubleshooting", padding="5")
+        self.bottom_paned.add(topic_frame, weight=1)
+        topic_frame.columnconfigure(0, weight=1)
+        topic_frame.rowconfigure(0, weight=1)
+        
+        self.topic_text = scrolledtext.ScrolledText(
+            topic_frame,
+            wrap=tk.WORD,
+            height=15,
+            font=("Arial", max(8, self.current_font_size - 2)),
+            state=tk.DISABLED
+        )
+        self.topic_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Bind click events to transcription text
         self.transcription_text.bind("<Button-1>", self.on_text_click)
@@ -1164,6 +1165,12 @@ class SpeechTranscriptionApp:
     def _get_template_ai_analysis(self, category, explanation):
         """Template-based AI analysis fallback"""
         ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
+        
+        # Include boot process explanation if available (for Linux topic)
+        if 'boot_process' in explanation:
+            ai_content += f"🚀 **Boot Process Overview:**\n"
+            ai_content += f"{explanation['boot_process']}\n\n"
+        
         ai_content += f"📊 **Advanced Insights:**\n"
         ai_content += f"• This topic is commonly encountered in {category} environments\n"
         ai_content += f"• Key performance indicators to monitor\n"
@@ -1463,8 +1470,14 @@ class SpeechTranscriptionApp:
             current_transcription = self.transcription_text.get("1.0", tk.END).strip()
             
             # Only analyze if transcription has changed since last analysis
+            # After Clear Text, last_analyzed_transcription is "", so any new content should trigger analysis
             if current_transcription == self.last_analyzed_transcription:
                 return  # No new content to analyze
+            
+            # If transcription is empty or whitespace-only, don't analyze
+            # Note: current_transcription is already stripped, so just check if it's empty
+            if not current_transcription:
+                return
             
             # Check if AI analysis is already running
             with self.ai_analysis_lock:
@@ -1511,13 +1524,15 @@ class SpeechTranscriptionApp:
     def check_and_analyze_keywords(self, text, full_transcription):
         """Check for keywords in text and automatically trigger AI analysis"""
         try:
-            text_lower = text.lower()
+            # Use full_transcription for keyword detection, not just the incremental text
+            # This ensures we catch keywords even when they appear in the full context
+            transcription_lower = full_transcription.lower() if full_transcription else ""
             found_keywords = []
             
             # Check all keyword categories for new keywords
             for category, keywords in self.tech_keywords.items():
                 for keyword in keywords:
-                    if keyword.lower() in text_lower:
+                    if keyword.lower() in transcription_lower:
                         # Create a unique identifier for this keyword in this context
                         keyword_id = f"{category}:{keyword.lower()}"
                         
@@ -1542,8 +1557,9 @@ class SpeechTranscriptionApp:
                         ai_content = self.generate_contextual_ai_analysis(category, explanation, full_transcription, keyword)
                         
                         # Schedule UI updates on main thread to prevent hanging
-                        self.root.after(0, lambda: self.show_ai_analysis(ai_content))
-                        self.root.after(0, lambda: self.show_topic_explanation(category))
+                        # Use default arguments to capture values immediately (fixes closure issue)
+                        self.root.after(0, lambda ai=ai_content: self.show_ai_analysis(ai))
+                        self.root.after(0, lambda cat=category: self.show_topic_explanation(cat))
                         
                         # Update timestamp and transcription tracking
                         self.last_ai_analysis_time = time.time()
@@ -1617,8 +1633,9 @@ class SpeechTranscriptionApp:
                         ai_content = self.generate_contextual_ai_analysis(category, explanation, buffered_transcription, keyword)
                         
                         # Schedule UI updates on main thread to prevent hanging
-                        self.root.after(0, lambda: self.show_ai_analysis(ai_content))
-                        self.root.after(0, lambda: self.show_topic_explanation(category))
+                        # Use default arguments to capture values immediately (fixes closure issue)
+                        self.root.after(0, lambda ai=ai_content: self.show_ai_analysis(ai))
+                        self.root.after(0, lambda cat=category: self.show_topic_explanation(cat))
                         
                         # Update timestamp and transcription tracking
                         self.last_ai_analysis_time = time.time()
@@ -1660,6 +1677,11 @@ class SpeechTranscriptionApp:
             # Format the explanation
             formatted_text = f"Topic: {explanation['title']}\n\n"
             formatted_text += f"Summary: {explanation['summary']}\n\n"
+            
+            # Include boot process explanation if available (for Linux topic)
+            if 'boot_process' in explanation:
+                formatted_text += f"{explanation['boot_process']}\n\n"
+            
             formatted_text += f"Technical Challenges:\n{explanation['challenges']}\n\n"
             formatted_text += f"Useful Commands:\n{explanation['commands']}"
             
@@ -1699,9 +1721,10 @@ class SpeechTranscriptionApp:
             },
             'linux': {
                 'title': 'Linux System Administration',
-                'summary': 'Linux is an open-source Unix-like operating system kernel. It\'s widely used in servers, embedded systems, and development environments. System administration involves managing users, processes, services, and system resources.',
-                'challenges': '• System security hardening\n• Performance tuning and optimization\n• Service dependency management\n• Log analysis and troubleshooting\n• Backup and disaster recovery',
-                'commands': '• sudo systemctl status service_name - Check if systemd service is running\n• tail -f /var/log/syslog - Monitor system log in real-time\n• ps aux | grep process_name - Find running processes by name\n• df -h - Show disk space usage in human-readable format\n• netstat -tulpn - Display network connections and listening ports\n• sudo systemctl restart service_name - Restart a systemd service\n• top - Display running processes and system resource usage\n• find /path -name "*.log" - Search for files by name pattern'
+                'summary': 'Linux is an open-source Unix-like operating system kernel. It\'s widely used in servers, embedded systems, and development environments. System administration involves managing users, processes, services, system resources, boot processes, power management, storage, and filesystems.',
+                'challenges': '• System security hardening\n• Performance tuning and optimization\n• Service dependency management\n• Log analysis and troubleshooting\n• Backup and disaster recovery\n• Boot process and bootloader configuration\n• Power management and ACPI issues\n• Storage and filesystem management\n• RAID and LVM configuration\n• Kernel and hardware compatibility',
+                'boot_process': 'THE LINUX BOOT PROCESS - STAGE BY STAGE:\n\nSTAGE 1: BIOS/UEFI FIRMWARE INITIALIZATION\n• Power-on self-test (POST) - Hardware diagnostics\n• Hardware detection and initialization\n• Boot device selection (BIOS: boot order, UEFI: EFI boot entries)\n• Locates bootloader on boot device (MBR for BIOS, EFI partition for UEFI)\n• Transfers control to bootloader\n\nSTAGE 2: BOOTLOADER (GRUB - Grand Unified Bootloader)\n• GRUB Stage 1 (BIOS): Loaded from MBR (first 512 bytes)\n• GRUB Stage 1.5: Loads filesystem drivers to read /boot\n• GRUB Stage 2: Loads GRUB configuration (/boot/grub/grub.cfg)\n• Displays boot menu (if multiple kernels/OSes)\n• Loads selected kernel and initramfs into memory\n• Transfers control to kernel\n\nSTAGE 3: KERNEL LOADING & INITIALIZATION\n• Kernel decompression (if compressed)\n• Kernel initialization:\n  - Hardware detection and initialization\n  - Memory management setup\n  - CPU initialization\n  - Device driver loading\n  - Mounts root filesystem (initially read-only)\n• Kernel starts first user-space process: /sbin/init (PID 1)\n\nSTAGE 4: INITRAMFS (INITIAL RAM FILESYSTEM)\n• Temporary root filesystem loaded into RAM\n• Contains essential drivers and tools\n• Mounts real root filesystem:\n  - Loads necessary drivers (RAID, LVM, encryption, etc.)\n  - Unlocks encrypted volumes\n  - Assembles RAID arrays\n  - Activates LVM volume groups\n  - Mounts root filesystem\n• Switches root (pivot_root) to real root filesystem\n• Executes /sbin/init from real root\n\nSTAGE 5: INIT PROCESS (SYSTEMD/UPSTART/SYSV)\n• /sbin/init becomes PID 1 (parent of all processes)\n• Systemd (modern init system):\n  - Parses /etc/systemd/system/ and /usr/lib/systemd/system/\n  - Loads unit files (.service, .target, .mount, etc.)\n  - Resolves dependencies\n  - Starts target units (default.target = graphical.target or multi-user.target)\n  - Parallel service startup\n• SysV init (legacy):\n  - Runs /etc/inittab\n  - Executes scripts in /etc/rc.d/rcS.d/ (S = start)\n  - Runs runlevel scripts (/etc/rc.d/rcN.d/)\n\nSTAGE 6: SYSTEM INITIALIZATION & SERVICE STARTUP\n• Mounts filesystems (/etc/fstab)\n• Starts essential services:\n  - udev (device management)\n  - Network services\n  - System logging (rsyslog/journald)\n  - Security services (SELinux/AppArmor)\n  - Display manager (if graphical)\n• Runs startup scripts (/etc/rc.local or systemd units)\n\nSTAGE 7: USER SPACE & LOGIN\n• Display manager starts (GDM, LightDM, etc.) for graphical\n• Or getty processes start for text console\n• Login prompt appears\n• User authentication\n• Shell initialization (/etc/profile, ~/.bashrc, etc.)\n• System ready for use\n\nTROUBLESHOOTING BOOT ISSUES:\n• Check BIOS/UEFI boot order and settings\n• Verify GRUB configuration: /boot/grub/grub.cfg\n• Review kernel messages: dmesg | less\n• Check initramfs: lsinitrd /boot/initramfs-*.img\n• Examine systemd boot logs: journalctl -b\n• Verify filesystem: fsck /dev/sda1\n• Check fstab: cat /etc/fstab\n• Test GRUB: grub-mkconfig -o /boot/grub/grub.cfg',
+                'commands': 'SYSTEM & SERVICES:\n• sudo systemctl status service_name - Check if systemd service is running\n• sudo systemctl restart service_name - Restart a systemd service\n• sudo systemctl enable service_name - Enable service to start on boot\n• journalctl -u service_name -f - Monitor systemd service logs\n• ps aux | grep process_name - Find running processes by name\n• top - Display running processes and system resource usage\n\nBOOT & POWER:\n• systemctl poweroff - Shutdown system gracefully\n• systemctl reboot - Reboot system\n• systemctl suspend - Suspend to RAM\n• systemctl hibernate - Hibernate to disk\n• dmesg | grep -i error - Check kernel messages for errors\n• dmesg | less - Review full kernel boot messages\n• journalctl -b - Show boot logs from current boot\n• journalctl -b -1 - Show logs from previous boot\n• grub-mkconfig -o /boot/grub/grub.cfg - Regenerate GRUB configuration\n• efibootmgr -v - List EFI boot entries\n• lsinitrd /boot/initramfs-*.img - List initramfs contents\n• mkinitrd or dracut - Rebuild initramfs\n\nSTORAGE & FILESYSTEMS:\n• df -h - Show disk space usage in human-readable format\n• lsblk - List all block devices and partitions\n• fdisk -l - List disk partitions\n• mount /dev/sda1 /mnt - Mount filesystem\n• umount /mnt - Unmount filesystem\n• blkid - Show filesystem UUIDs and types\n• vgs - Display volume groups\n• lvs - Display logical volumes\n• pvs - Display physical volumes\n• mdadm --detail /dev/md0 - Show RAID array details\n• find /path -name "*.log" - Search for files by name pattern'
             },
             'git': {
                 'title': 'Git Version Control',
@@ -1716,10 +1739,10 @@ class SpeechTranscriptionApp:
                 'commands': '• SELECT * FROM table_name WHERE condition; - Query data from database table\n• CREATE INDEX idx_name ON table_name(column); - Create index to speed up queries\n• SHOW PROCESSLIST; - Display currently running database processes\n• mysqldump -u user -p database_name > backup.sql - Create database backup file\n• EXPLAIN SELECT query; - Analyze query execution plan and performance\n• SHOW TABLES; - List all tables in current database\n• DESCRIBE table_name; - Show table structure and column information\n• GRANT SELECT ON database.* TO user@localhost; - Grant database permissions to user'
             },
             'networking': {
-                'title': 'Computer Networking',
-                'summary': 'Computer networking involves connecting computers and devices to share resources and information. It includes protocols, routing, switching, and network security.',
-                'challenges': '• Network security and firewalls\n• Bandwidth optimization\n• Latency and packet loss\n• Protocol compatibility\n• Troubleshooting connectivity issues',
-                'commands': '• ping hostname_or_ip - Test network connectivity and latency\n• traceroute destination - Trace network path to destination\n• netstat -an - Show all network connections and listening ports\n• tcpdump -i interface - Capture and analyze network packets\n• nmap -sS target_ip - Scan target for open ports using SYN scan\n• ssh user@hostname - Connect to remote server securely\n• curl -I http://example.com - Check if website is accessible (HEAD request)\n• dig domain.com - Query DNS records for domain name'
+                'title': 'Computer Networking & Network Administration',
+                'summary': 'Computer networking involves connecting computers and devices to share resources and information. It includes protocols, routing, switching, network security, interface configuration, VLANs, bonding, firewalls, and network troubleshooting.',
+                'challenges': '• Network security and firewalls\n• Bandwidth optimization\n• Latency and packet loss\n• Protocol compatibility\n• Troubleshooting connectivity issues\n• Interface configuration and bonding\n• VLAN and network segmentation\n• Routing and gateway configuration\n• DNS resolution problems\n• Network performance tuning',
+                'commands': 'CONNECTIVITY & DIAGNOSTICS:\n• ping hostname_or_ip - Test network connectivity and latency\n• traceroute destination - Trace network path to destination\n• mtr hostname - Continuous traceroute with statistics\n• ss -tulpn - Show listening ports and connections (modern netstat)\n• netstat -an - Show all network connections and listening ports\n• ip addr show - Display all network interfaces and IP addresses\n• ip link show - Show network interface status\n• ip route show - Display routing table\n\nPACKET CAPTURE & ANALYSIS:\n• tcpdump -i eth0 -n "port 80" - Capture packets on interface\n• tcpdump -i any -w capture.pcap - Save packets to file\n• wireshark - GUI packet analyzer\n• nmap -sS target_ip - Scan target for open ports using SYN scan\n• nmap -A target_ip - Aggressive scan with OS detection\n\nINTERFACE CONFIGURATION:\n• ip addr add 192.168.1.100/24 dev eth0 - Add IP address to interface\n• ip link set eth0 up - Bring interface up\n• ip link set eth0 down - Bring interface down\n• ifconfig eth0 192.168.1.100 netmask 255.255.255.0 - Configure interface (legacy)\n• ip link add bond0 type bond - Create network bond interface\n• ip link set eth0 master bond0 - Add interface to bond\n\nFIREWALL & SECURITY:\n• iptables -L -n -v - List firewall rules\n• iptables -A INPUT -p tcp --dport 22 -j ACCEPT - Allow SSH\n• ufw status - Check UFW firewall status\n• ufw allow 80/tcp - Allow HTTP traffic\n\nDNS & REMOTE ACCESS:\n• dig domain.com - Query DNS records for domain name\n• nslookup domain.com - Lookup domain name\n• ssh user@hostname - Connect to remote server securely\n• curl -I http://example.com - Check if website is accessible (HEAD request)\n• wget http://example.com/file - Download file via HTTP'
             },
             'security': {
                 'title': 'Information Security',
@@ -1752,10 +1775,16 @@ class SpeechTranscriptionApp:
                 'commands': '• mpirun -np 64 ./parallel_program - Run MPI program on 64 processes\n• nvidia-smi -l 1 - Monitor GPU usage every second\n• htop -d 1 - Display system resources every second\n• sacct -j job_id --format=JobID,State,ExitCode - Check Slurm job status and exit code\n• squeue -u username - Show user\'s jobs in Slurm queue\n• srun --gres=gpu:1 --pty bash - Get interactive shell with GPU access\n• sinfo -N -l - List all compute nodes and their status\n• scontrol show job job_id - Display detailed job information'
             },
             'network_storage': {
-                'title': 'Network Storage Technologies',
-                'summary': 'Network storage systems provide shared storage resources over a network, including NAS (Network Attached Storage), SAN (Storage Area Network), and distributed storage solutions. They enable centralized data management and high availability.',
-                'challenges': '• Network latency and bandwidth optimization\n• Data consistency across distributed systems\n• Backup and disaster recovery strategies\n• Storage capacity planning and scaling\n• Security and access control\n• Performance tuning for different workloads',
-                'commands': '• mount -t nfs server:/path /local/mount - Mount NFS share to local directory\n• iscsiadm -m discovery -t st -p target_ip - Discover iSCSI targets on server\n• df -h | grep nfs - Check NFS mount points and disk usage\n• iostat -x 1 - Monitor storage I/O performance every second\n• ceph status - Check Ceph distributed storage cluster health\n• gluster volume info - Display GlusterFS volume information\n• smbclient -L //server -U username - List SMB/CIFS shares on server\n• showmount -e server - Show NFS exports available on server'
+                'title': 'Storage & Network Storage Technologies',
+                'summary': 'Storage systems include local disk management, RAID, LVM, and network storage solutions like NAS (Network Attached Storage), SAN (Storage Area Network), and distributed storage. They enable centralized data management, high availability, and efficient storage utilization.',
+                'challenges': '• Network latency and bandwidth optimization\n• Data consistency across distributed systems\n• Backup and disaster recovery strategies\n• Storage capacity planning and scaling\n• Security and access control\n• Performance tuning for different workloads\n• RAID configuration and recovery\n• LVM management and thin provisioning\n• Filesystem selection and optimization\n• Storage performance monitoring',
+                'commands': 'LOCAL STORAGE:\n• lsblk - List all block devices and partitions\n• fdisk -l - List disk partitions\n• parted -l - List partitions (GPT support)\n• df -h - Show disk space usage\n• du -sh /path - Show directory size\n• iostat -x 1 - Monitor storage I/O performance\n• smartctl -a /dev/sda - Check disk health (SMART)\n\nRAID MANAGEMENT:\n• mdadm --create /dev/md0 --level=1 --raid-devices=2 /dev/sda1 /dev/sdb1 - Create RAID1\n• mdadm --detail /dev/md0 - Show RAID array details\n• mdadm --manage /dev/md0 --add /dev/sdc1 - Add disk to RAID\n• cat /proc/mdstat - Check RAID status\n\nLVM MANAGEMENT:\n• pvs - Display physical volumes\n• vgs - Display volume groups\n• lvs - Display logical volumes\n• pvcreate /dev/sda1 - Create physical volume\n• vgcreate vg_name /dev/sda1 - Create volume group\n• lvcreate -L 10G -n lv_name vg_name - Create logical volume\n• lvextend -L +5G /dev/vg_name/lv_name - Extend logical volume\n• resize2fs /dev/vg_name/lv_name - Resize ext4 filesystem\n\nNETWORK STORAGE:\n• mount -t nfs server:/path /local/mount - Mount NFS share\n• mount -t cifs //server/share /mnt -o username=user - Mount CIFS/SMB share\n• iscsiadm -m discovery -t st -p target_ip - Discover iSCSI targets\n• iscsiadm -m node -T target_name -p target_ip -l - Login to iSCSI target\n• df -h | grep nfs - Check NFS mount points\n• showmount -e server - Show NFS exports available\n• smbclient -L //server -U username - List SMB/CIFS shares\n\nDISTRIBUTED STORAGE:\n• ceph status - Check Ceph cluster health\n• ceph df - Show Ceph storage usage\n• gluster volume info - Display GlusterFS volume information\n• gluster volume status - Check GlusterFS volume status\n\nBACKUP & RESTORE:\n• rsync -avz source/ dest/ - Sync directories\n• tar -czf backup.tar.gz /path - Create compressed archive\n• tar -xzf backup.tar.gz - Extract archive\n• dd if=/dev/sda of=/dev/sdb bs=4M - Clone disk'
+            },
+            'virtualization': {
+                'title': 'Virtualization & Virtual Machine Management',
+                'summary': 'Virtualization enables running multiple operating systems on a single physical host through hypervisors like VMware vSphere, KVM, Xen, or Hyper-V. Container technologies like Docker and Kubernetes provide lightweight application virtualization. Virtualization improves resource utilization, enables workload isolation, and simplifies deployment and management.',
+                'challenges': '• Resource allocation and overcommitment\n• Performance optimization and overhead\n• Storage management and datastore optimization\n• Network configuration and security\n• VM migration and high availability\n• Container orchestration and scaling\n• Backup and disaster recovery\n• License management and compliance\n• Troubleshooting performance issues\n• Integration with storage and networking',
+                'commands': 'VMWARE VSPHERE:\n• vim-cmd vmsvc/getallvms - List all VMs on ESXi host\n• vim-cmd vmsvc/power.on vmid - Power on VM\n• vim-cmd vmsvc/power.off vmid - Power off VM\n• vim-cmd vmsvc/power.getstate vmid - Check VM power state\n• esxcli vm process list - List running VM processes\n• esxcli storage vmfs extent list - List VMFS datastores\n• esxcli network vswitch standard list - List virtual switches\n\nKVM/QEMU:\n• virsh list --all - List all VMs (running and stopped)\n• virsh start vm_name - Start VM\n• virsh shutdown vm_name - Gracefully shutdown VM\n• virsh destroy vm_name - Force stop VM\n• virsh dominfo vm_name - Show VM information\n• virsh snapshot-create vm_name - Create VM snapshot\n• qemu-img create -f qcow2 disk.qcow2 10G - Create virtual disk\n• qemu-img convert -O qcow2 source.img dest.qcow2 - Convert disk format\n\nDOCKER:\n• docker ps -a - List all containers\n• docker images - List all images\n• docker run -d -p 8080:80 image_name - Run container\n• docker stop container_id - Stop container\n• docker exec -it container_id /bin/bash - Get shell in container\n• docker logs container_id - View container logs\n• docker-compose up -d - Start multi-container application\n\nKUBERNETES:\n• kubectl get pods - List all pods\n• kubectl get nodes - List cluster nodes\n• kubectl describe pod pod_name - Show pod details\n• kubectl logs pod_name - View pod logs\n• kubectl exec -it pod_name -- /bin/bash - Get shell in pod\n• kubectl apply -f deployment.yaml - Deploy application\n• kubectl scale deployment name --replicas=3 - Scale deployment'
             },
             'performance': {
                 'title': 'Performance Optimization & Quantum Computing',
@@ -2181,6 +2210,9 @@ class SpeechTranscriptionApp:
         # Reset analyzed keywords to allow fresh analysis
         self.analyzed_keywords.clear()
         self.last_analyzed_transcription = ""
+        
+        # Reset AI analysis throttle to allow immediate analysis after clearing
+        self.last_ai_analysis_time = 0
         
         # Reset AI analysis lock and buffer
         with self.ai_analysis_lock:
