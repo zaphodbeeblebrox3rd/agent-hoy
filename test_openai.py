@@ -29,13 +29,15 @@ def test_openai_imports():
 def test_openai_configuration():
     print("\nTesting OpenAI configuration...")
     try:
-        from openai_config import openai_config
+        from openai_config import AVAILABLE_MODELS, openai_config
 
         print(f"API Key configured: {openai_config.is_configured()}")
         print(f"Model: {openai_config.model}")
         print(f"Responses API: {openai_config.use_responses_api}")
         print(f"Streaming: {openai_config.stream_responses}")
         print(f"Max tokens: {openai_config.max_tokens}")
+        assert len(AVAILABLE_MODELS) >= 10
+        print(f"Available models in UI: {len(AVAILABLE_MODELS)}")
 
         if openai_config.is_configured():
             print("OK OpenAI is properly configured")
@@ -65,6 +67,106 @@ def test_rollback_flags():
         return True
     except Exception as e:
         print(f"FAIL rollback test: {e}")
+        return False
+
+
+def test_reasoning_model_detection():
+    print("\nTesting GPT-5 reasoning model detection...")
+    try:
+        from openai_config import is_reasoning_model
+
+        assert is_reasoning_model("gpt-5.4-mini") is True
+        assert is_reasoning_model("gpt-5.5") is True
+        assert is_reasoning_model("gpt-5-chat-latest") is False
+        assert is_reasoning_model("gpt-4.1-mini") is False
+        print("OK reasoning model detection")
+        return True
+    except Exception as e:
+        print(f"FAIL reasoning model detection: {e}")
+        return False
+
+
+def test_responses_kwargs_builder():
+    print("\nTesting Responses API kwargs builder...")
+    try:
+        from openai_config import openai_config
+        from openai_integration import OpenAIAnalyzer
+
+        analyzer = OpenAIAnalyzer()
+        original_model = openai_config.get_model()
+
+        openai_config.set_model("gpt-5.4-mini")
+        gpt5_kwargs = analyzer._build_responses_kwargs("test prompt")
+        assert "temperature" not in gpt5_kwargs
+        assert gpt5_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
+        assert gpt5_kwargs["text"]["verbosity"] == openai_config.text_verbosity
+
+        openai_config.set_model("gpt-4.1-mini")
+        gpt4_kwargs = analyzer._build_responses_kwargs("test prompt")
+        assert "temperature" in gpt4_kwargs
+        assert "reasoning" not in gpt4_kwargs
+
+        openai_config.set_model(original_model)
+        print("OK Responses API kwargs builder")
+        return True
+    except Exception as e:
+        print(f"FAIL Responses API kwargs builder: {e}")
+        return False
+
+
+def test_cache_key_includes_model():
+    print("\nTesting model-aware cache keys...")
+    try:
+        from openai_config import openai_config
+        from openai_integration import OpenAIAnalyzer
+
+        analyzer = OpenAIAnalyzer()
+        original_model = openai_config.get_model()
+
+        openai_config.set_model("gpt-4.1-mini")
+        key_a = analyzer._get_cache_key("prompt", "context")
+        openai_config.set_model("gpt-5.4-mini")
+        key_b = analyzer._get_cache_key("prompt", "context")
+        assert key_a != key_b
+
+        openai_config.set_model(original_model)
+        print("OK model-aware cache keys")
+        return True
+    except Exception as e:
+        print(f"FAIL model-aware cache keys: {e}")
+        return False
+
+
+def test_persist_model_round_trip():
+    print("\nTesting model persistence...")
+    try:
+        from openai_config import (
+            CONF_DIR,
+            MODEL_CONFIG_FILE,
+            load_persisted_model,
+            save_persisted_model,
+        )
+
+        path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
+        backup = None
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as handle:
+                backup = handle.read()
+
+        try:
+            save_persisted_model("gpt-5.4-mini")
+            assert load_persisted_model() == "gpt-5.4-mini"
+            print("OK model persistence round-trip")
+            return True
+        finally:
+            if backup is None:
+                if os.path.exists(path):
+                    os.remove(path)
+            else:
+                with open(path, "w", encoding="utf-8") as handle:
+                    handle.write(backup)
+    except Exception as e:
+        print(f"FAIL model persistence: {e}")
         return False
 
 
@@ -141,6 +243,10 @@ def main():
         test_openai_imports,
         test_openai_configuration,
         test_rollback_flags,
+        test_reasoning_model_detection,
+        test_responses_kwargs_builder,
+        test_cache_key_includes_model,
+        test_persist_model_round_trip,
         test_openai_analyzer,
         test_template_fallback,
         test_cost_calculation,

@@ -48,12 +48,18 @@ from transcription_config import (
 )
 
 # OpenAI integration
+from openai_config import (
+    AVAILABLE_MODELS,
+    MODEL_ID_BY_LABEL,
+    openai_config,
+    save_persisted_model,
+)
 try:
     from openai_integration import openai_analyzer
-    from openai_config import openai_config
     OPENAI_AVAILABLE = True
 except ImportError:
     print("OpenAI integration not available - using template fallback")
+    openai_analyzer = None
     OPENAI_AVAILABLE = False
 
 class SpeechTranscriptionApp:
@@ -209,6 +215,25 @@ class SpeechTranscriptionApp:
         self.increase_font_button = ttk.Button(font_frame, text="A+", 
                                              command=self.increase_font_size, width=3)
         self.increase_font_button.pack(side=tk.LEFT, padx=(2, 0))
+
+        # OpenAI model selector
+        model_frame = ttk.Frame(top_row)
+        model_frame.pack(side=tk.LEFT, padx=(20, 0))
+
+        ttk.Label(model_frame, text="Model:").pack(side=tk.LEFT)
+
+        self.model_var = tk.StringVar(value=openai_config.get_model_label())
+        self.model_combo = ttk.Combobox(
+            model_frame,
+            textvariable=self.model_var,
+            values=[label for label, _ in AVAILABLE_MODELS],
+            state="readonly"
+            if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available()
+            else "disabled",
+            width=22,
+        )
+        self.model_combo.pack(side=tk.LEFT, padx=(5, 0))
+        self.model_combo.bind("<<ComboboxSelected>>", self.on_model_selected)
         
         # Second row - Status labels and settings
         bottom_row = ttk.Frame(control_frame)
@@ -232,8 +257,7 @@ class SpeechTranscriptionApp:
         self.ai_checkbox.pack(side=tk.LEFT, padx=(0, 20))
         
         # OpenAI status indicator
-        openai_status = "OpenAI: Configured" if (OPENAI_AVAILABLE and openai_analyzer.is_available()) else "OpenAI: Template Mode"
-        self.openai_status_label = ttk.Label(bottom_row, text=openai_status)
+        self.openai_status_label = ttk.Label(bottom_row, text=self._openai_status_text())
         self.openai_status_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # Cost tracking
@@ -1026,6 +1050,28 @@ class SpeechTranscriptionApp:
         except Exception as e:
             print(f"Error restoring pane positions: {e}")
     
+    def _openai_status_text(self) -> str:
+        if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
+            return f"OpenAI: {openai_config.model}"
+        return "OpenAI: Template Mode"
+
+    def on_model_selected(self, _event=None):
+        """Handle model combobox selection."""
+        try:
+            label = self.model_var.get()
+            model_id = MODEL_ID_BY_LABEL.get(label)
+            if not model_id:
+                print(f"Unknown model label selected: {label}")
+                return
+
+            openai_config.set_model(model_id)
+            save_persisted_model(model_id)
+            self.openai_status_label.config(text=self._openai_status_text())
+            self.update_ai_status(f"Model changed to {model_id}")
+            print(f"OpenAI model set to {model_id}")
+        except Exception as e:
+            print(f"Error changing OpenAI model: {e}")
+
     def on_ai_toggle(self):
         """Handle AI toggle checkbox state change"""
         try:
@@ -1151,7 +1197,7 @@ class SpeechTranscriptionApp:
             self.root.after(0, lambda: self.update_ai_status("Processing..."))
             
             # Use OpenAI if available and enabled
-            if OPENAI_AVAILABLE and openai_analyzer.is_available():
+            if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
                 print(f"Using OpenAI for topic analysis: {category}")
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
@@ -1222,7 +1268,7 @@ class SpeechTranscriptionApp:
             self.root.after(0, lambda: self.update_ai_status("Processing..."))
             
             # Use OpenAI if available and enabled
-            if OPENAI_AVAILABLE and openai_analyzer.is_available():
+            if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
                 print(f"Using OpenAI for troubleshooting analysis")
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
@@ -1303,7 +1349,7 @@ class SpeechTranscriptionApp:
             self.root.after(0, lambda: self.update_question_type_display(question_type))
             
             # Use OpenAI if available and enabled
-            if OPENAI_AVAILABLE and openai_analyzer.is_available():
+            if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
                 print(f"Using OpenAI for contextual analysis: {category} (type: {question_type})")
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")

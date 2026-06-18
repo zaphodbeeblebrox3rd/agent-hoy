@@ -1,0 +1,9 @@
+# OpenAI model selection
+# Copy to openai_model.conf to customize (gitignored).
+# OPENAI_MODEL env var overrides this file on startup.
+
+model = gpt-4.1-mini
+
+# GPT-5 reasoning models (optional; used when a gpt-5* model is selected):
+# reasoning_effort = low
+# text_verbosity = medium

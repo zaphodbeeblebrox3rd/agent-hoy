@@ -65,8 +65,48 @@ class OpenAIAnalyzer:
         self.rate_limit_tracker["token_count"] += tokens_used
 
     def _get_cache_key(self, prompt: str, context: str) -> str:
-        content = f"{prompt}:{context}"
+        content = f"{openai_config.model}:{prompt}:{context}"
         return hashlib.md5(content.encode()).hexdigest()
+
+    def _build_responses_kwargs(self, prompt: str, stream: bool = False) -> dict:
+        kwargs = {
+            "model": openai_config.model,
+            "instructions": openai_config.system_instructions,
+            "input": prompt,
+            "max_output_tokens": openai_config.max_tokens,
+            "store": False,
+        }
+        if stream:
+            kwargs["stream"] = True
+
+        if openai_config.is_current_model_reasoning():
+            kwargs["reasoning"] = {"effort": openai_config.reasoning_effort}
+            kwargs["text"] = {
+                "format": {"type": "text"},
+                "verbosity": openai_config.text_verbosity,
+            }
+        else:
+            kwargs["temperature"] = openai_config.temperature
+
+        return kwargs
+
+    def _build_chat_completions_kwargs(self, prompt: str) -> dict:
+        kwargs = {
+            "model": openai_config.model,
+            "messages": [
+                {"role": "system", "content": openai_config.system_instructions},
+                {"role": "user", "content": prompt},
+            ],
+            "max_tokens": openai_config.max_tokens,
+        }
+
+        if openai_config.is_current_model_reasoning():
+            kwargs["reasoning_effort"] = openai_config.reasoning_effort
+            kwargs["verbosity"] = openai_config.text_verbosity
+        else:
+            kwargs["temperature"] = openai_config.temperature
+
+        return kwargs
 
     def _get_cached_response(self, cache_key: str) -> Optional[str]:
         if not openai_config.cache_responses:
@@ -254,13 +294,7 @@ class OpenAIAnalyzer:
 
         if use_stream:
             stream = self.client.responses.create(
-                model=openai_config.model,
-                instructions=openai_config.system_instructions,
-                input=prompt,
-                max_output_tokens=openai_config.max_tokens,
-                temperature=openai_config.temperature,
-                store=False,
-                stream=True,
+                **self._build_responses_kwargs(prompt, stream=True),
             )
 
             ai_response = ""
@@ -285,12 +319,7 @@ class OpenAIAnalyzer:
             return ai_response, 0.0, estimated_tokens
 
         response = self.client.responses.create(
-            model=openai_config.model,
-            instructions=openai_config.system_instructions,
-            input=prompt,
-            max_output_tokens=openai_config.max_tokens,
-            temperature=openai_config.temperature,
-            store=False,
+            **self._build_responses_kwargs(prompt, stream=False),
         )
 
         ai_response = self._extract_response_text(response)
@@ -300,13 +329,7 @@ class OpenAIAnalyzer:
 
     def _make_chat_completions_call(self, prompt: str) -> tuple[str, float, int]:
         response = self.client.chat.completions.create(
-            model=openai_config.model,
-            messages=[
-                {"role": "system", "content": openai_config.system_instructions},
-                {"role": "user", "content": prompt},
-            ],
-            max_tokens=openai_config.max_tokens,
-            temperature=openai_config.temperature,
+            **self._build_chat_completions_kwargs(prompt),
         )
 
         ai_response = response.choices[0].message.content or ""
@@ -345,7 +368,13 @@ class OpenAIAnalyzer:
             return ai_response, cost
 
         except Exception as e:
+            error_text = str(e).lower()
             print(f"OpenAI API error: {e}")
+            if "temperature" in error_text and openai_config.is_current_model_reasoning():
+                print(
+                    "Hint: GPT-5 reasoning models do not support temperature; "
+                    "use OPENAI_REASONING_EFFORT and OPENAI_TEXT_VERBOSITY instead."
+                )
             if openai_config.use_fallback_on_error:
                 return self._get_fallback_response(prompt, context), 0.0
             return f"OpenAI API error: {str(e)}", 0.0

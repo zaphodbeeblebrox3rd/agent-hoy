@@ -105,7 +105,7 @@ Important: `uv sync` without `--extra whisper` installs the Lite profile and rem
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `OPENAI_API_KEY` | (none) | OpenAI API key |
-| `OPENAI_MODEL` | `gpt-4.1-mini` | Model for analysis |
+| `OPENAI_MODEL` | `gpt-4.1-mini` | Model for analysis (or use Model combobox in the app) |
 | `USE_RESPONSES_API` | `true` | Use Responses API (`false` for Chat Completions rollback) |
 | `OPENAI_STREAM` | `true` | Stream AI responses to UI |
 | `STT_PREFER_GOOGLE` | `false` | Force Google STT even when CUDA is available |
