@@ -130,8 +130,8 @@ def main():
     print("=" * 50)
 
     print(f"Python version: {sys.version}")
-    if sys.version_info < (3, 9):
-        print("FAIL Python 3.9+ required")
+    if sys.version_info < (3, 11):
+        print("FAIL Python 3.11+ required (see .python-version)")
         return False
     if sys.version_info >= (3, 13):
         print("WARN Python 3.13 may have compatibility issues")

@@ -29,9 +29,15 @@ url = "https://download.pytorch.org/whl/cpu"
 explicit = true
 
 [[tool.uv.index]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
 explicit = true
+
+# Rollback for older NVIDIA drivers / GPU arches: use cu126 instead of cu130
+# [[tool.uv.index]]
+# name = "pytorch-cu126"
+# url = "https://download.pytorch.org/whl/cu126"
+# explicit = true
 
 [tool.uv.sources]
 torch = { index = "pytorch-cpu", extra = "whisper" }

@@ -1228,34 +1228,34 @@ class SpeechTranscriptionApp:
     
     def _get_template_ai_analysis(self, category, explanation):
         """Template-based AI analysis fallback"""
-        ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
+        ai_content = f"AI-Enhanced Analysis: {explanation['title']}\n\n"
         
         # Include boot process explanation if available (for Linux topic)
         if 'boot_process' in explanation:
-            ai_content += f"🚀 **Boot Process Overview:**\n"
+            ai_content += f"**Boot Process Overview:**\n"
             ai_content += f"{explanation['boot_process']}\n\n"
         
-        ai_content += f"📊 **Advanced Insights:**\n"
+        ai_content += f"**Advanced Insights:**\n"
         ai_content += f"• This topic is commonly encountered in {category} environments\n"
         ai_content += f"• Key performance indicators to monitor\n"
         ai_content += f"• Best practices for optimization\n\n"
         
-        ai_content += f"🔧 **Advanced Commands:**\n"
+        ai_content += f"**Advanced Commands:**\n"
         ai_content += f"• Performance monitoring: `htop`, `iostat`, `netstat`\n"
         ai_content += f"• Debugging: `strace`, `gdb`, `valgrind`\n"
         ai_content += f"• Log analysis: `grep`, `awk`, `sed`\n\n"
         
-        ai_content += f"⚠️ **Common Pitfalls:**\n"
+        ai_content += f"**Common Pitfalls:**\n"
         ai_content += f"• Memory leaks and resource management\n"
         ai_content += f"• Security vulnerabilities to watch for\n"
         ai_content += f"• Performance bottlenecks\n\n"
         
-        ai_content += f"🚀 **Next Steps:**\n"
+        ai_content += f"**Next Steps:**\n"
         ai_content += f"• Consider implementing monitoring\n"
         ai_content += f"• Review security best practices\n"
         ai_content += f"• Plan for scalability\n\n"
         
-        ai_content += f"💡 **AI Suggestion:**\n"
+        ai_content += f"**AI Suggestion:**\n"
         ai_content += f"Based on the topic '{category}', consider exploring related technologies "
         ai_content += f"and implementing automated testing and monitoring solutions."
         
@@ -1299,33 +1299,33 @@ class SpeechTranscriptionApp:
     
     def _get_template_troubleshooting_analysis(self, question_text, suggestions):
         """Template-based troubleshooting analysis fallback"""
-        ai_content = f"🤖 AI Troubleshooting Analysis\n\n"
-        ai_content += f"📝 **Question Analysis:**\n"
+        ai_content = f"AI Troubleshooting Analysis\n\n"
+        ai_content += f"**Question Analysis:**\n"
         ai_content += f"• Detected question type: Technical troubleshooting\n"
         ai_content += f"• Complexity level: Intermediate to Advanced\n"
         ai_content += f"• Context: {question_text[:100]}...\n\n"
         
-        ai_content += f"🎯 **AI-Enhanced Approach:**\n"
+        ai_content += f"**AI-Enhanced Approach:**\n"
         ai_content += f"• Systematic debugging methodology\n"
         ai_content += f"• Root cause analysis techniques\n"
         ai_content += f"• Performance optimization strategies\n\n"
         
-        ai_content += f"🔍 **Advanced Diagnostics:**\n"
+        ai_content += f"**Advanced Diagnostics:**\n"
         ai_content += f"• Log analysis with `grep`, `awk`, `sed`\n"
         ai_content += f"• System monitoring with `htop`, `iostat`\n"
         ai_content += f"• Network analysis with `netstat`, `tcpdump`\n\n"
         
-        ai_content += f"⚡ **Quick Wins:**\n"
+        ai_content += f"**Quick Wins:**\n"
         ai_content += f"• Check system resources first\n"
         ai_content += f"• Verify configuration files\n"
         ai_content += f"• Test with minimal configuration\n\n"
         
-        ai_content += f"🚀 **Long-term Solutions:**\n"
+        ai_content += f"**Long-term Solutions:**\n"
         ai_content += f"• Implement monitoring and alerting\n"
         ai_content += f"• Document the resolution process\n"
         ai_content += f"• Create runbooks for future reference\n\n"
         
-        ai_content += f"💡 **AI Recommendation:**\n"
+        ai_content += f"**AI Recommendation:**\n"
         ai_content += f"Consider implementing automated testing and monitoring to prevent similar issues in the future."
         
         return ai_content
@@ -1407,8 +1407,8 @@ class SpeechTranscriptionApp:
     
     def _get_contextual_template_analysis(self, category, explanation, full_transcription, detected_keyword, question_type='troubleshooting'):
         """Template-based contextual analysis fallback with adaptive question types"""
-        ai_content = f"🤖 AI-Enhanced Analysis: {explanation['title']}\n\n"
-        ai_content += f"📊 **Context-Aware Insights:**\n"
+        ai_content = f"AI-Enhanced Analysis: {explanation['title']}\n\n"
+        ai_content += f"**Context-Aware Insights:**\n"
         ai_content += f"• Detected keyword: '{detected_keyword}' in category '{category}'\n"
         ai_content += f"• Question type: {question_type.title()}\n"
         ai_content += f"• Session context: {len(full_transcription.split())} words transcribed\n"
@@ -1416,7 +1416,7 @@ class SpeechTranscriptionApp:
         
         # Adaptive content based on question type
         if question_type == 'architecture':
-            ai_content += f"🏗️ **System Architecture & Design Framework:**\n"
+            ai_content += f"**System Architecture & Design Framework:**\n"
             ai_content += f"• System architecture patterns and design principles for {category}\n"
             ai_content += f"• Scalability and performance design strategies\n"
             ai_content += f"• Component interaction and service boundaries\n"
@@ -1439,7 +1439,7 @@ class SpeechTranscriptionApp:
             ai_content += f"• Compliance and regulatory requirements\n"
             ai_content += f"• Best practices and standards\n\n"
             
-            ai_content += f"📋 **Policy Guidance:**\n"
+            ai_content += f"**Policy Guidance:**\n"
             ai_content += f"• Governance frameworks: ITIL, COBIT, NIST\n"
             ai_content += f"• Compliance standards: GDPR, HIPAA, SOX, PCI-DSS\n"
             ai_content += f"• Documentation requirements: Policies, Procedures, Guidelines\n"
@@ -1450,7 +1450,7 @@ class SpeechTranscriptionApp:
             ai_content += f"• Threat modeling and risk assessment\n"
             ai_content += f"• Security controls and monitoring\n\n"
             
-            ai_content += f"🔒 **Security Guidance:**\n"
+            ai_content += f"**Security Guidance:**\n"
             ai_content += f"• Security frameworks: OWASP, NIST Cybersecurity Framework\n"
             ai_content += f"• Authentication: MFA, SSO, OAuth, SAML\n"
             ai_content += f"• Encryption: TLS, AES, RSA, Key management\n"
@@ -1461,12 +1461,12 @@ class SpeechTranscriptionApp:
             ai_content += f"• Key performance indicators to monitor\n"
             ai_content += f"• Best practices for optimization\n\n"
             
-            ai_content += f"🔧 **Troubleshooting Commands:**\n"
+            ai_content += f"**Troubleshooting Commands:**\n"
             ai_content += f"• Performance monitoring: `htop`, `iostat`, `netstat`\n"
             ai_content += f"• Debugging: `strace`, `gdb`, `valgrind`\n"
             ai_content += f"• Log analysis: `grep`, `awk`, `sed`\n\n"
         
-        ai_content += f"⚠️ **Common Considerations:**\n"
+        ai_content += f"**Common Considerations:**\n"
         if question_type == 'architecture':
             ai_content += f"• System complexity and maintainability\n"
             ai_content += f"• Performance bottlenecks and scalability limits\n"
@@ -1488,7 +1488,7 @@ class SpeechTranscriptionApp:
             ai_content += f"• Security vulnerabilities to watch for\n"
             ai_content += f"• Performance bottlenecks\n"
         
-        ai_content += f"\n🚀 **Next Steps:**\n"
+        ai_content += f"\n**Next Steps:**\n"
         if question_type == 'architecture':
             ai_content += f"• Create architectural diagrams and documentation\n"
             ai_content += f"• Evaluate technology stack and dependencies\n"
@@ -1510,7 +1510,7 @@ class SpeechTranscriptionApp:
             ai_content += f"• Review security best practices\n"
             ai_content += f"• Plan for scalability\n"
         
-        ai_content += f"\n💡 **AI Suggestion:**\n"
+        ai_content += f"\n **AI Suggestion:**\n"
         if question_type == 'architecture':
             ai_content += f"Based on your {question_type} question about {category}, consider exploring architectural patterns, "
             ai_content += f"design principles, and scalability strategies that align with your system requirements."
@@ -1824,7 +1824,7 @@ class SpeechTranscriptionApp:
             self.topic_text.delete("1.0", tk.END)
             
             # Format the suggestions
-            formatted_text = f"🔧 Troubleshooting Suggestions:\n\n"
+            formatted_text = f"Troubleshooting Suggestions:\n\n"
             formatted_text += f"Question: {question_text}\n\n"
             formatted_text += f"Approach: {suggestions['approach']}\n\n"
             formatted_text += f"Steps to Try:\n{suggestions['steps']}\n\n"
