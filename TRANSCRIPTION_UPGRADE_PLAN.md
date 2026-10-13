@@ -1,102 +1,75 @@
-# Transcription Quality Improvement Plan
+# Transcription Quality Status
 
-## Current Issues
-- **Google Speech Recognition**: Slow and poor accuracy
-- **FLAC dependency**: Causes installation issues
-- **Limited offline capability**: Requires internet connection
+This document tracks transcription quality work. Phases 1-3 below are implemented; remaining items are optional.
 
-## Immediate Improvements (Implemented)
+## Current issues (mitigated)
+
+| Issue | Mitigation |
+|-------|------------|
+| Google Speech accuracy / latency | Full profile uses Whisper; Google remains Lite default / fallback |
+| FLAC dependency | Required only for Google STT; Whisper path does not need FLAC |
+| Offline capability | `uv sync --extra whisper` or `./setup_uv.sh --full` |
+
+## Implemented
 
 ### 1. Optimized Google Speech Recognition
-- ✅ **Faster calibration**: Reduced from 1s to 0.5s
-- ✅ **Better sensitivity**: Lower energy threshold (300)
-- ✅ **Dynamic adjustment**: Auto-adjusts to ambient noise
-- ✅ **Faster detection**: Shorter pause and phrase thresholds
-- ✅ **Language hints**: Explicitly set to 'en-US'
 
-### 2. Configuration System
-- ✅ **transcription_config.py**: Centralized settings
-- ✅ **Service comparison**: Different recognition options
-- ✅ **Performance settings**: Optimized audio processing
+- Faster ambient calibration and dynamic energy thresholds
+- Language hints set to `en-US`
+- Tunable via `LISTEN_TIMEOUT` and `LISTEN_PHRASE_TIME_LIMIT`
 
-## Next Steps for Better Transcription
+### 2. Configuration system
 
-### Phase 1: Whisper Integration (Recommended)
-```python
-# Add to pyproject.toml optional whisper extra
-- pip:
-  - openai-whisper
-  - torch
-  - torchaudio
-```
+- `transcription_config.py`: STT preference, Whisper decode settings, phrase hints
+- `conf/*.conf.example`: corrections, keywords, topics, question patterns (override with `conf/*.conf`)
 
-**Benefits:**
-- 🚀 **Much better accuracy** (especially for technical terms)
-- 🔄 **Works offline** (no internet required)
-- 🎯 **Better with technical content** (Python, Docker, etc.)
-- ⚡ **Faster than Google** (once model is loaded)
+### 3. Whisper integration (Phase 1)
 
-**Implementation:**
-```python
-def recognize_whisper(self, audio):
-    import whisper
-    model = whisper.load_model("base")
-    result = model.transcribe(audio)
-    return result["text"]
-```
+- Optional extra: `openai-whisper`, `torch`, `torchaudio`
+- Install: `./setup_uv.sh --full` or `uv sync --extra whisper`
+- Auto device selection (CUDA when available); model via `WHISPER_MODEL` or auto (`base` CPU / `small` GPU)
+- Preference logic: `STT_PREFER_WHISPER`, `STT_PREFER_GOOGLE`, or CUDA/online heuristics
 
-### Phase 2: Anthropic/OpenAI Integration
-```python
-# For even better accuracy with technical content
-def enhance_with_ai(self, transcription):
-    # Send to Anthropic/OpenAI for improvement
-    # Fix technical terms, improve grammar
-    # Add context awareness
-```
+### 4. OpenAI analysis (Phase 2)
 
-### Phase 3: Hybrid Approach
-```python
-# Combine multiple services for best results
-def hybrid_recognition(self, audio):
-    # Try Whisper first (best accuracy)
-    # Fallback to Google (fastest)
-    # Use AI enhancement for technical terms
-```
+- Responses API with streaming (rollback: `USE_RESPONSES_API=false`)
+- Model switcher and `conf/openai_model.conf`
+- See [OPENAI_SETUP.md](OPENAI_SETUP.md)
 
-## Service Comparison
+### 5. Hybrid recognition (Phase 3)
 
-| Service | Accuracy | Speed | Offline | Cost | Best For |
+- Whisper preferred on CUDA or when offline
+- Google used online without CUDA (or when forced)
+- Transcription corrections applied after STT
+- Cross-fallback when the primary path returns empty text
+
+## Service comparison
+
+| Service | Accuracy | Speed | Offline | Cost | Best for |
 |---------|----------|-------|---------|------|----------|
-| Google | Medium | Fast | No | Free | General speech |
-| Whisper | High | Medium | Yes | Free | Technical content |
-| Azure | High | Very Fast | No | Paid | Enterprise |
-| Anthropic | Very High | Fast | No | Paid | Technical + AI enhancement |
+| Google | Medium | Fast | No | Free | Lite profile / short online chunks |
+| Whisper | High | Medium (CPU) / Fast (GPU) | Yes | Free | Technical content, offline |
+| OpenAI analysis | N/A (post-STT) | Fast | No | Paid | Topic / troubleshooting explanations |
 
-## Implementation Priority
+## Optional next steps
 
-### 1. **Whisper Integration** (Immediate)
-- Best accuracy for technical terms
-- Works offline
-- Free and open source
+1. Wire `offline-stt` extra (vosk / pocketsphinx) into `main.py`
+2. Context-aware correction ranking (beyond static `conf/corrections.conf`)
+3. Azure or other cloud STT backends listed in `transcription_config.py`
 
-### 2. **AI Enhancement** (Next)
-- Use Anthropic/OpenAI to improve transcriptions
-- Fix technical terminology
-- Add context awareness
-
-### 3. **Hybrid System** (Future)
-- Combine multiple services
-- Automatic fallback
-- Best of all worlds
-
-## Quick Start: Whisper Integration
+## Quick start
 
 ```bash
-# Install Whisper
-pip install openai-whisper
+# Lite (Google STT)
+./setup_uv.sh
+uv run python main.py
 
-# Test locally
-python -c "import whisper; print('Whisper installed successfully')"
+# Full (Whisper)
+./setup_uv.sh --full
+uv run python main.py
+
+# Force local Whisper while online
+STT_PREFER_WHISPER=true uv run python main.py
 ```
 
-**Would you like me to implement Whisper integration first?** It's the quickest way to get much better transcription quality! 🚀
+Rollback Full to Lite: `rm -rf .venv && uv sync` (or set `TORCH_CUDA_INDEX_URL` only if changing CUDA wheels; see README).

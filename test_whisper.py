@@ -7,10 +7,10 @@ def test_whisper_import():
     """Test if Whisper can be imported"""
     try:
         import whisper
-        print("✅ Whisper imported successfully")
+        print("Whisper imported successfully")
         return True
     except ImportError as e:
-        print(f"❌ Whisper import failed: {e}")
+        print(f"Whisper import failed: {e}")
         return False
 
 def test_whisper_model_loading():
@@ -19,10 +19,10 @@ def test_whisper_model_loading():
         import whisper
         print("Loading Whisper base model...")
         model = whisper.load_model("base")
-        print("✅ Whisper model loaded successfully")
+        print("Whisper model loaded successfully")
         return True
     except Exception as e:
-        print(f"❌ Whisper model loading failed: {e}")
+        print(f"Whisper model loading failed: {e}")
         return False
 
 def test_whisper_transcription():
@@ -54,14 +54,14 @@ def test_whisper_transcription():
             
             # Test transcription
             result = model.transcribe(temp_file.name)
-            print(f"✅ Whisper transcription test completed: '{result['text']}'")
+            print(f"Whisper transcription test completed: '{result['text']}'")
             
             # Clean up
             os.unlink(temp_file.name)
             return True
             
     except Exception as e:
-        print(f"❌ Whisper transcription test failed: {e}")
+        print(f"Whisper transcription test failed: {e}")
         return False
 
 def main():
@@ -84,13 +84,13 @@ def main():
     print("\n" + "=" * 40)
     print("Test Summary:")
     for i, (test_name, _) in enumerate(tests):
-        status = "✅ PASS" if results[i] else "❌ FAIL"
+        status = "PASS" if results[i] else "FAIL"
         print(f"{test_name}: {status}")
     
     if all(results):
-        print("\n🎉 All tests passed! Whisper is ready to use.")
+        print("\nAll tests passed! Whisper is ready to use.")
     else:
-        print("\n⚠️ Some tests failed. Check the error messages above.")
+        print("\nSome tests failed. Check the error messages above.")
 
 if __name__ == "__main__":
     main()

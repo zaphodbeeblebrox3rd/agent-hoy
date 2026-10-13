@@ -1,15 +1,17 @@
-# HPC & Hybrid-Cloud Transcription Enhancements
+# HPC and Hybrid-Cloud Transcription Enhancements
 
-This document details the comprehensive additions made to support High Performance Computing (HPC) and Hybrid-Cloud computing terminology in the speech transcription system.
+Additions for High Performance Computing (HPC) and hybrid-cloud terminology in the speech transcription system.
+
+Corrections ship in `conf/corrections.conf.example`. Copy to `conf/corrections.conf` to customize (gitignored). Rollback: delete the override file.
 
 ## Summary of Additions
 
-### 📊 Statistics
-- **Total corrections**: 422+ mappings (195+ new HPC/cloud terms added)
+### Statistics
+- **Total corrections**: 700+ mappings (HPC/cloud terms included in the shared corrections file)
 - **New categories**: 13 specialized HPC/cloud categories
 - **Technical phrases**: 40+ new phrases added to recognition hints
 
-## 🔬 HPC (High Performance Computing) Terms
+## HPC (High Performance Computing) Terms
 
 ### Job Schedulers & Resource Managers
 | Misheard | Corrected | Description |
@@ -82,7 +84,7 @@ This document details the comprehensive additions made to support High Performan
 | H P C G | hpcg | High Performance Conjugate Gradients benchmark |
 | N P B, N A S | npb, nas | NAS Parallel Benchmarks |
 
-## ☁️ Hybrid-Cloud Computing Terms
+## Hybrid-Cloud Computing Terms
 
 ### Cloud Platforms & Services
 | Misheard | Corrected | Description |
@@ -168,7 +170,7 @@ This document details the comprehensive additions made to support High Performan
 | app dynamics | appdynamics | Application intelligence platform |
 | dyna trace | dynatrace | Software intelligence platform |
 
-## 🔧 Technical Implementation
+## Technical Implementation
 
 ### Recognition Phrases Added
 The following phrases were added to `transcription_config.py` to improve speech recognition accuracy:
@@ -178,7 +180,7 @@ The following phrases were added to `transcription_config.py` to improve speech 
 **Cloud Terms**: hybrid-cloud, multi-cloud, cloudbursting, istio, terraform, ansible, prometheus, grafana, nginx, elasticsearch, etc.
 
 ### Correction Mappings
-Total of 195+ new correction mappings added to `corrections.conf` covering:
+Hundreds of HPC/cloud correction mappings live in `conf/corrections.conf` (or the shipped `conf/corrections.conf.example`) covering:
 - Job schedulers and resource managers
 - Parallel computing frameworks
 - GPU computing platforms
@@ -189,23 +191,23 @@ Total of 195+ new correction mappings added to `corrections.conf` covering:
 - Infrastructure automation tools
 - Monitoring and observability stack
 
-## 🧪 Testing Results
+## Testing Results
 
-✅ **All HPC corrections working**:
+All HPC corrections working:
 - "storm" → "slurm"
 - "cooper kernels" → "cuda kernels"
 - "infinite band" → "infiniband"
 - "V tune" → "vtune"
 - "lin pack" → "linpack"
 
-✅ **All Hybrid-Cloud corrections working**:
+All Hybrid-Cloud corrections working:
 - "kube net ease" → "kubernetes"
 - "is tea oh" → "istio"
 - "terra form" → "terraform"
 - "pro me the us" → "prometheus"
 - "elastic search" → "elasticsearch"
 
-## 🎯 Usage Examples
+## Usage Examples
 
 ### HPC Discussions
 - "Submit jobs to storm cluster" → "Submit jobs to slurm cluster"
@@ -219,9 +221,9 @@ Total of 195+ new correction mappings added to `corrections.conf` covering:
 - "Monitor with pro me the us" → "Monitor with prometheus"
 - "Scale with cloud burst strategy" → "Scale with cloud-burst strategy"
 
-## 📝 Custom Additions
+## Custom Additions
 
-Users can add their own HPC/cloud-specific corrections by editing `corrections.conf`:
+Users can add their own HPC/cloud-specific corrections by editing `conf/corrections.conf` (copy from the `.example` first):
 
 ```conf
 # Custom HPC terms

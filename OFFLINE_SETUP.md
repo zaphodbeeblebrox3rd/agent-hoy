@@ -1,6 +1,6 @@
 # Offline Setup Guide
 
-Use the **Full** install profile for offline speech recognition with Whisper.
+Use the Full install profile for offline speech recognition with Whisper.
 
 ## Install Full profile
 
@@ -12,10 +12,21 @@ uv sync --extra whisper
 
 ## Offline capabilities
 
-1. **Whisper STT** (Full profile): Local transcription without internet
-2. **Google fallback**: When online and FLAC is available
-3. **Topic cache**: `cache/topic_cache.pkl` (24h topic / 1h troubleshooting TTL)
-4. **OpenAI file cache**: `cache/openai_*.json` when API key is set
+1. Whisper STT (Full profile): local transcription without internet
+2. Google fallback: when online and FLAC is available
+3. Topic cache: `cache/topic_cache.pkl` (24h topic / 1h troubleshooting TTL)
+4. OpenAI file cache: `cache/openai_*.json` when API key is set
+
+## Prefer Whisper while online
+
+The app sets offline behavior automatically when network checks fail. To prefer local Whisper even when online:
+
+```bash
+export STT_PREFER_WHISPER=true
+uv run python main.py
+```
+
+Rollback: unset `STT_PREFER_WHISPER` or set `STT_PREFER_GOOGLE=true`.
 
 ## Optional offline STT packages
 
@@ -23,11 +34,7 @@ uv sync --extra whisper
 uv sync --extra offline-stt
 ```
 
-Installs vosk and pocketsphinx (not wired in main.py today; reserved for future use).
-
-## Force offline mode
-
-The app sets `use_offline = True` when network checks fail. To force offline at startup, set in code or wait for automatic detection.
+Installs vosk and pocketsphinx (not wired in `main.py` today; reserved for future use).
 
 ## Cache maintenance
 

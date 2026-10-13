@@ -31,8 +31,10 @@ if [[ "$PROFILE" == "full" ]]; then
     uv sync --extra whisper
     echo "full" > .install-profile
     if command -v nvidia-smi &> /dev/null; then
-        echo "NVIDIA GPU detected - upgrading to CUDA PyTorch..."
-        uv pip install --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+        # Default cu130; rollback for older drivers: TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu126
+        TORCH_CUDA_INDEX_URL="${TORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
+        echo "NVIDIA GPU detected - upgrading to CUDA PyTorch ($TORCH_CUDA_INDEX_URL)..."
+        uv pip install --force-reinstall torch torchaudio --index-url "$TORCH_CUDA_INDEX_URL"
     fi
     echo "Verifying Whisper install..."
     uv run python -c "import whisper, torch; print('Whisper OK, torch', torch.__version__, 'cuda', torch.cuda.is_available())"

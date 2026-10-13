@@ -78,10 +78,24 @@ brew install portaudio flac ffmpeg
 
 ```bash
 uv sync --extra whisper
-uv pip install --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+# Default CUDA index is cu130; override if needed (rollback / older drivers: cu126)
+export TORCH_CUDA_INDEX_URL="${TORCH_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu130}"
+uv pip install --force-reinstall torch torchaudio --index-url "$TORCH_CUDA_INDEX_URL"
 ```
 
 When CUDA is available, the app prefers Whisper for low-latency local transcription. Without a GPU, it prefers Google STT while online and falls back to CPU Whisper offline.
+
+### Configuration files
+
+Shipped defaults live under `conf/*.conf.example`. To customize without editing examples, copy to the matching `conf/*.conf` name (gitignored):
+
+```bash
+cp conf/corrections.conf.example conf/corrections.conf
+cp conf/tech_keywords.conf.example conf/tech_keywords.conf
+# similarly for topic_explanations, question_patterns, question_type_patterns, openai_model
+```
+
+Rollback any override by deleting the corresponding `conf/*.conf` file; the app falls back to the `.example` defaults.
 
 ## Usage
 
@@ -109,16 +123,19 @@ Important: `uv sync` without `--extra whisper` installs the Lite profile and rem
 | `USE_RESPONSES_API` | `true` | Use Responses API (`false` for Chat Completions rollback) |
 | `OPENAI_STREAM` | `true` | Stream AI responses to UI |
 | `STT_PREFER_GOOGLE` | `false` | Force Google STT even when CUDA is available |
-| `STT_PREFER_WHISPER` | `false` | Force Whisper even without CUDA |
+| `STT_PREFER_WHISPER` | `false` | Force Whisper even without CUDA (useful offline-first) |
 | `WHISPER_MODEL` | auto | `base` on CPU, `small` on GPU |
 | `WHISPER_FAST_MODE` | `true` | Greedy decoding, shorter prompts |
 | `WHISPER_BEAM_SIZE` | `1` | Higher = slower but more accurate |
+| `TORCH_CUDA_INDEX_URL` | `.../cu130` | CUDA wheel index for Full setup (rollback: `.../cu126`) |
 | `QUESTION_COMPLETION_TIMEOUT` | `1.5` | Seconds after speech before AI runs |
 | `AI_ANALYSIS_THROTTLE_SECONDS` | `2` | Min gap between OpenAI calls |
 | `LISTEN_PHRASE_TIME_LIMIT` | `3` | Max seconds per mic chunk |
 | `VERBOSE` | `false` | Enable debug logging |
 | `RECOGNITION_MAX_WORKERS` | `2` | Max parallel STT workers |
 | `NETWORK_CHECK_TTL_SECONDS` | `30` | Network check cache TTL |
+
+See also [OPENAI_SETUP.md](OPENAI_SETUP.md), [OFFLINE_SETUP.md](OFFLINE_SETUP.md), [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md), and [TRANSCRIPTION_UPGRADE_PLAN.md](TRANSCRIPTION_UPGRADE_PLAN.md).
 
 ## Troubleshooting
 

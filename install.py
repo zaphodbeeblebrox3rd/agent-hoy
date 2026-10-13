@@ -6,6 +6,7 @@ Installation script for the Speech Transcription Application (uv-based).
 import argparse
 import os
 import platform
+import shlex
 import subprocess
 import sys
 
@@ -92,10 +93,14 @@ def install_python_dependencies(full_profile=False):
         if not run_command("uv sync --extra whisper", "Syncing Full profile with Whisper"):
             return False
         if _has_nvidia_gpu():
+            cuda_index = os.environ.get(
+                "TORCH_CUDA_INDEX_URL",
+                "https://download.pytorch.org/whl/cu130",
+            )
             return run_command(
                 "uv pip install --force-reinstall torch torchaudio "
-                "--index-url https://download.pytorch.org/whl/cu128",
-                "Upgrading to CUDA PyTorch",
+                f"--index-url {shlex.quote(cuda_index)}",
+                f"Upgrading to CUDA PyTorch ({cuda_index})",
             )
         return True
 
@@ -150,8 +155,9 @@ def main():
     print("=" * 50)
     print(f"Profile: {profile}")
 
-    if sys.version_info < (3, 9):
-        print(f"Python 3.9+ required. Current version: {sys.version}")
+    if sys.version_info < (3, 11):
+        print(f"Python 3.11+ required. Current version: {sys.version}")
+        print("Install with: uv python install 3.11")
         return False
 
     print(f"Python version: {sys.version}")

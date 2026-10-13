@@ -53,6 +53,20 @@ brew install portaudio flac ffmpeg
 choco install flac ffmpeg
 ```
 
+## Configuration overrides
+
+Defaults ship as `conf/*.conf.example`. Copy to `conf/*.conf` to customize (gitignored). Delete the override to roll back to examples.
+
+## CUDA PyTorch (Full profile)
+
+Setup scripts upgrade to CUDA when `nvidia-smi` is present. Default index is CUDA 13.0 (`cu130`).
+
+```bash
+# Optional override before setup (rollback / older drivers)
+export TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu126
+./setup_uv.sh --full
+```
+
 ## Alternative: pip-only install
 
 If uv is unavailable, use the exported requirements file:

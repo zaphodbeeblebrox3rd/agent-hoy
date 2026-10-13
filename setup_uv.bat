@@ -42,8 +42,11 @@ if errorlevel 1 exit /b 1
 echo full> .install-profile
 where nvidia-smi >nul 2>&1
 if not errorlevel 1 (
+    REM Default cu130; rollback for older drivers: set TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu126
+    if not defined TORCH_CUDA_INDEX_URL set "TORCH_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu130"
     echo NVIDIA GPU detected - upgrading to CUDA PyTorch...
-    uv pip install --force-reinstall torch torchaudio --index-url https://download.pytorch.org/whl/cu128
+    echo Using %TORCH_CUDA_INDEX_URL%
+    uv pip install --force-reinstall torch torchaudio --index-url %TORCH_CUDA_INDEX_URL%
     if errorlevel 1 exit /b 1
 )
 echo Verifying Whisper install...
