@@ -1,0 +1,4 @@
+# Assist mode radio selection.
+# mode is one of: transcription, voice, window, screen
+# Rollback for the whole feature is ASSIST_MODES_ENABLED in assist_mode.py.
+mode = transcription

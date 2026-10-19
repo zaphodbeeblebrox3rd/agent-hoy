@@ -28,11 +28,17 @@ idna==3.18
     #   anyio
     #   httpx
     #   requests
+jeepney==0.9.0
+    # via agent-hoy
 jiter==0.15.0
     # via openai
+mss==10.2.0
+    # via agent-hoy
 numpy==2.4.6
     # via agent-hoy
 openai==2.43.0
+    # via agent-hoy
+pillow==13.0.0
     # via agent-hoy
 pyaudio==0.2.14
     # via agent-hoy

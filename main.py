@@ -23,6 +23,19 @@ import requests
 import os
 from datetime import datetime, timedelta
 
+from assist_mode import (
+    ASSIST_MODES,
+    ASSIST_MODES_ENABLED,
+    GUIDE_TRANSCRIPT_CHARS,
+    MODE_SCREEN,
+    MODE_TRANSCRIPTION,
+    MODE_WINDOW,
+    captures,
+    guide_active,
+    load_assist_mode,
+    save_assist_mode,
+    speaks,
+)
 from config_loader import (
     load_question_patterns,
     load_question_type_patterns,
@@ -48,12 +61,15 @@ from transcription_config import (
 )
 
 # OpenAI integration
+from image_payload import prepare_encoded
 from openai_config import (
     AVAILABLE_MODELS,
     MODEL_ID_BY_LABEL,
     openai_config,
     save_persisted_model,
 )
+from screen_capture import capture_frame, foreign_window_id
+from voice_output import play_wav_bytes, synthesize_speech
 try:
     from openai_integration import openai_analyzer
     OPENAI_AVAILABLE = True
@@ -139,6 +155,16 @@ class SpeechTranscriptionApp:
             thread_name_prefix="stt",
         )
         self.recognition_generation = 0
+        self.audio_device_lock = threading.Lock()
+        self._speech_active = False
+        self._speech_generation = 0
+        self._resume_after_speech = False
+        self._guide_cursor = 0
+        self._shared_window_id = None
+        self._guide_exclude_id = None
+        self._guide_logical_screen = None
+        self._scheduled_guide_mode = MODE_TRANSCRIPTION
+        self._scheduled_ai_enabled = True
         self.last_whisper_text = ""
         self.whisper_device = "cpu"
         self.whisper_fp16 = False
@@ -164,6 +190,7 @@ class SpeechTranscriptionApp:
         
         # Bind audio status refresh to microphone changes
         self.root.bind("<FocusIn>", lambda e: self.update_audio_status())
+        self.root.bind("<FocusOut>", self._on_app_focus_out)
         
     def setup_ui(self):
         """Set up the user interface"""
@@ -234,7 +261,21 @@ class SpeechTranscriptionApp:
         )
         self.model_combo.pack(side=tk.LEFT, padx=(5, 0))
         self.model_combo.bind("<<ComboboxSelected>>", self.on_model_selected)
-        
+
+        self.assist_mode = tk.StringVar(value=load_assist_mode())
+        if ASSIST_MODES_ENABLED:
+            mode_row = ttk.Frame(control_frame)
+            mode_row.pack(fill=tk.X, pady=(0, 5))
+            ttk.Label(mode_row, text="Assist:").pack(side=tk.LEFT, padx=(0, 8))
+            for mode_value, mode_label in ASSIST_MODES:
+                ttk.Radiobutton(
+                    mode_row,
+                    text=mode_label,
+                    value=mode_value,
+                    variable=self.assist_mode,
+                    command=self.on_assist_mode,
+                ).pack(side=tk.LEFT, padx=(0, 12))
+
         # Second row - Status labels and settings
         bottom_row = ttk.Frame(control_frame)
         bottom_row.pack(fill=tk.X)
@@ -458,6 +499,9 @@ class SpeechTranscriptionApp:
     
     def stop_listening(self):
         """Stop the speech recognition"""
+        self._speech_generation += 1
+        self._resume_after_speech = False
+        self._speech_active = False
         self.is_listening = False
         self.is_paused = False
         self.listen_button.config(text="Start Listening")
@@ -473,6 +517,7 @@ class SpeechTranscriptionApp:
     
     def pause_listening(self):
         """Pause listening but allow AI analysis to continue."""
+        self._resume_after_speech = False
         if self.is_listening and not self.is_paused:
             self.is_paused = True
             self.recognition_generation += 1
@@ -494,17 +539,20 @@ class SpeechTranscriptionApp:
         print("Starting continuous listening...")
         while self.is_listening:
             try:
-                if self.is_paused:
+                if self.is_paused or self._speech_active:
                     time.sleep(0.1)
                     continue
                 
                 self._verbose("Listening for audio...")
-                with self.microphone as source:
-                    audio = self.recognizer.listen(
-                        source,
-                        timeout=LISTEN_TIMEOUT,
-                        phrase_time_limit=LISTEN_PHRASE_TIME_LIMIT,
-                    )
+                with self.audio_device_lock:
+                    if self.is_paused or self._speech_active or not self.is_listening:
+                        continue
+                    with self.microphone as source:
+                        audio = self.recognizer.listen(
+                            source,
+                            timeout=LISTEN_TIMEOUT,
+                            phrase_time_limit=LISTEN_PHRASE_TIME_LIMIT,
+                        )
                 
                 if self.is_paused or not self.is_listening:
                     continue
@@ -704,7 +752,7 @@ class SpeechTranscriptionApp:
         ai_content = self.generate_contextual_ai_analysis(
             category, explanation, full_transcription, keyword
         )
-        self.root.after(0, lambda ai=ai_content: self.show_ai_analysis(ai))
+        self.root.after(0, lambda ai=ai_content: self.show_ai_analysis(ai, speak=self._assist_guide_active()))
         self.root.after(0, lambda cat=category: self.show_topic_explanation(cat))
         self.last_ai_analysis_time = time.time()
         self.last_analyzed_transcription = full_transcription
@@ -929,12 +977,32 @@ class SpeechTranscriptionApp:
             current_time = time.time()
             if current_time - self.last_speech_time >= self.question_completion_timeout:
                 self._verbose("Question completion detected, scheduling AI analysis...")
-                # Run keyword analysis in a separate thread
-                threading.Thread(
-                    target=self.check_and_analyze_keywords_throttled,
-                    args=("",),  # Empty text since we'll get full transcription
-                    daemon=True
-                ).start()
+                if self._assist_guide_active():
+                    snapshot = self.current_transcription
+                    self._scheduled_guide_mode = self.assist_mode.get()
+                    self._scheduled_ai_enabled = bool(self.ai_enabled_var.get())
+                    self._guide_exclude_id = None
+                    self._guide_logical_screen = None
+                    try:
+                        self._guide_exclude_id = int(self.root.winfo_id())
+                        self._guide_logical_screen = (
+                            self.root.winfo_screenwidth(),
+                            self.root.winfo_screenheight(),
+                        )
+                    except (tk.TclError, ValueError, TypeError):
+                        pass
+                    threading.Thread(
+                        target=self._run_guide_turn,
+                        args=(snapshot,),
+                        daemon=True,
+                    ).start()
+                else:
+                    # Run keyword analysis in a separate thread
+                    threading.Thread(
+                        target=self.check_and_analyze_keywords_throttled,
+                        args=("",),  # Empty text since we'll get full transcription
+                        daemon=True
+                    ).start()
             else:
                 # Reschedule for remaining time
                 remaining_time = int((self.question_completion_timeout - (current_time - self.last_speech_time)) * 1000)
@@ -946,7 +1014,7 @@ class SpeechTranscriptionApp:
     def check_questions_async(self, text):
         """Asynchronously check for questions without blocking transcription"""
         try:
-            if self.detect_question(text):
+            if self.detect_question(text) and not self._assist_guide_active():
                 self.provide_troubleshooting_suggestions(text)
         except Exception as e:
             print(f"Error in async question checking: {e}")
@@ -1086,8 +1154,229 @@ class SpeechTranscriptionApp:
                 self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
         except Exception as e:
             print(f"Error handling AI toggle: {e}")
+
+    def on_assist_mode(self):
+        """Persist the Assist radio and remember which window was in front."""
+        mode = self.assist_mode.get()
+        if not ASSIST_MODES_ENABLED:
+            mode = MODE_TRANSCRIPTION
+        save_assist_mode(mode)
+        self._remember_foreground_window()
+        if mode == MODE_WINDOW:
+            self.update_ai_status("Assist: Window")
+        elif mode == MODE_SCREEN:
+            self.update_ai_status("Assist: Screen")
+        elif speaks(mode):
+            self.update_ai_status("Assist: Voice")
+        else:
+            self.update_ai_status("Assist: Transcription")
+
+    def _assist_guide_active(self) -> bool:
+        if not ASSIST_MODES_ENABLED or not hasattr(self, "assist_mode"):
+            return False
+        return guide_active(self.assist_mode.get())
+
+    def _on_app_focus_out(self, event):
+        if event.widget is self.root:
+            self.root.after(200, self._remember_foreground_window)
+
+    def _remember_foreground_window(self):
+        try:
+            exclude_id = int(self.root.winfo_id())
+        except (tk.TclError, ValueError, TypeError):
+            exclude_id = None
+        foreign = foreign_window_id(exclude_id)
+        if foreign:
+            self._shared_window_id = foreign
+
+    def _run_guide_turn(self, snapshot: str):
+        """Look at the latest speech, optionally the screen, then speak one step."""
+        acquired = False
+        try:
+            mode = getattr(self, "_scheduled_guide_mode", MODE_TRANSCRIPTION)
+            if not guide_active(mode):
+                return
+            if not getattr(self, "_scheduled_ai_enabled", True):
+                self.root.after(
+                    0,
+                    lambda: self.show_ai_analysis(
+                        "AI Analysis is off. Turn it on to use Voice, Window, or Screen."
+                    ),
+                )
+                return
+
+            new_text = snapshot[self._guide_cursor :].strip()
+            if not new_text:
+                return
+
+            current_time = time.time()
+            if current_time - self.last_ai_analysis_time < self.ai_analysis_throttle_seconds:
+                return
+
+            with self.ai_analysis_lock:
+                if self.ai_analysis_running:
+                    self.transcription_buffer = snapshot
+                    self.pending_ai_analysis = True
+                    return
+                self.ai_analysis_running = True
+                acquired = True
+
+            self.last_ai_analysis_time = current_time
+            prior = snapshot[: self._guide_cursor][-GUIDE_TRANSCRIPT_CHARS:]
+            recent = new_text[-GUIDE_TRANSCRIPT_CHARS:]
+            if prior.strip():
+                transcript = f"Earlier:\n{prior.strip()}\n\nJust now:\n{recent}"
+            else:
+                transcript = recent
+
+            image = None
+            capture_note = "No screenshot. Voice only."
+            if captures(mode):
+                self.root.after(0, lambda: self.update_ai_status("Capturing..."))
+                captured = self._capture_for_guide(mode)
+                if captured.png_bytes:
+                    prepared = prepare_encoded(captured.png_bytes, openai_config.model)
+                    image = (prepared.data, prepared.mime, prepared.detail)
+                    resolution = (
+                        "resized to fit the API limit" if prepared.resized else "original resolution"
+                    )
+                    capture_note = (
+                        f"{captured.label}, {prepared.width}x{prepared.height}, {resolution}."
+                    )
+                    if captured.window_id:
+                        self._shared_window_id = captured.window_id
+                    print(
+                        f"Captured {captured.label} {prepared.width}x{prepared.height} "
+                        f"resized={prepared.resized} detail={prepared.detail}"
+                    )
+                else:
+                    capture_note = f"No screenshot ({captured.error or 'capture failed'})."
+                    print(capture_note)
+
+            if not (OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available()):
+                self.root.after(
+                    0,
+                    lambda: self.show_ai_analysis(
+                        "OpenAI is not configured. Voice and vision need an API key."
+                    ),
+                )
+                return
+
+            self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+            ai_content, cost = openai_analyzer.generate_screen_guide(
+                transcript,
+                capture_note,
+                image=image,
+                stream_callback=self._make_ai_stream_callback(),
+            )
+            self._guide_cursor = len(snapshot)
+            if cost > 0:
+                self.root.after(0, lambda amount=cost: self.add_to_session_cost(amount))
+                self.root.after(0, self.increment_api_counter)
+            self.root.after(0, lambda: self.update_ai_status("Completed"))
+            self.root.after(0, lambda content=ai_content: self.show_ai_analysis(content, speak=True))
+        except Exception as exc:
+            print(f"Guide turn failed: {exc}")
+            self.root.after(0, lambda: self.update_ai_status("Error"))
+            self.root.after(
+                0,
+                lambda message=str(exc): self.show_ai_analysis(f"Guide turn failed: {message}"),
+            )
+        finally:
+            if not acquired:
+                return
+            buffered = ""
+            with self.ai_analysis_lock:
+                self.ai_analysis_running = False
+                if self.pending_ai_analysis and self.transcription_buffer:
+                    buffered = self.transcription_buffer
+                    self.transcription_buffer = ""
+                    self.pending_ai_analysis = False
+            if buffered and guide_active(getattr(self, "_scheduled_guide_mode", MODE_TRANSCRIPTION)):
+                threading.Thread(
+                    target=self._run_guide_turn,
+                    args=(buffered,),
+                    daemon=True,
+                ).start()
+
+    def _capture_for_guide(self, mode: str):
+        share_mode = "screen" if mode == MODE_SCREEN else "window"
+        return capture_frame(
+            share_mode,
+            exclude_window_id=self._guide_exclude_id,
+            preferred_window_id=self._shared_window_id,
+            logical_screen=self._guide_logical_screen,
+        )
+
+    def _start_speech(self, text: str):
+        if not text or not str(text).strip():
+            return
+        if not self._assist_guide_active():
+            return
+        self._speech_generation += 1
+        generation = self._speech_generation
+        threading.Thread(
+            target=self._speak_reply,
+            args=(text, generation),
+            daemon=True,
+        ).start()
+
+    def _speak_reply(self, text: str, generation: int):
+        if generation != self._speech_generation:
+            return
+        if not (OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.client):
+            self.root.after(0, lambda: self.update_ai_status("Speech needs an API key"))
+            return
+
+        paused_for_speech = False
+        self._speech_active = True
+        try:
+            if self.is_listening and not self.is_paused:
+                self.is_paused = True
+                self.recognition_generation += 1
+                self._resume_after_speech = True
+                paused_for_speech = True
+                self.root.after(0, self._show_speaking_status)
+
+            with self.audio_device_lock:
+                if generation != self._speech_generation:
+                    return
+                wav_bytes = synthesize_speech(openai_analyzer.client, text)
+                if wav_bytes:
+                    self.root.after(0, self.increment_api_counter)
+                    play_wav_bytes(
+                        wav_bytes,
+                        lambda: generation != self._speech_generation or not self._assist_guide_active(),
+                    )
+        except Exception as exc:
+            print(f"Speech playback failed: {exc}")
+            self.root.after(0, lambda: self.update_ai_status("Speech playback failed"))
+        finally:
+            self._speech_active = False
+            if paused_for_speech and self._resume_after_speech and self.is_listening:
+                self.is_paused = False
+                self.recognition_generation += 1
+                self._resume_after_speech = False
+                self.root.after(0, self._show_listening_status)
+            elif self.is_listening and not self.is_paused:
+                self.root.after(0, self._show_listening_status)
+
+    def _show_speaking_status(self):
+        self.status_label.config(text="Status: Speaking...")
+        if self.is_listening:
+            self.pause_button.config(text="Pause Listening", state=tk.DISABLED)
+
+    def _show_listening_status(self):
+        if not self.is_listening:
+            return
+        if self.is_paused:
+            self.pause_button.config(text="Resume Listening", state=tk.NORMAL)
+            self.status_label.config(text="Status: Paused (AI analysis continues)")
+        else:
+            self.pause_button.config(text="Pause Listening", state=tk.NORMAL)
+            self.status_label.config(text="Status: Listening...")
     
-    def show_ai_analysis(self, content):
+    def show_ai_analysis(self, content, speak=False):
         """Display AI-driven analysis in the AI pane"""
         try:
             self.ai_text.config(state=tk.NORMAL)
@@ -1095,6 +1384,8 @@ class SpeechTranscriptionApp:
             self.ai_text.insert("1.0", content)
             self.ai_text.config(state=tk.DISABLED)
             self.ai_text.see(tk.END)
+            if speak and self._assist_guide_active():
+                self._start_speech(content)
         except Exception as e:
             print(f"Error displaying AI analysis: {e}")
     
@@ -1671,7 +1962,7 @@ class SpeechTranscriptionApp:
             # Show AI analysis for the topic (if enabled)
             if self.ai_enabled_var.get():
                 ai_content = self.generate_ai_analysis(category, explanation)
-                self.show_ai_analysis(ai_content)
+                self.show_ai_analysis(ai_content, speak=self._assist_guide_active())
             else:
                 self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
     
@@ -2031,6 +2322,7 @@ class SpeechTranscriptionApp:
         self.ai_text.config(state=tk.DISABLED)
         
         self.current_transcription = ""
+        self._guide_cursor = 0
         
         # Reset analyzed keywords to allow fresh analysis
         self.analyzed_keywords.clear()

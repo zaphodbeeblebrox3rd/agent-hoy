@@ -35,6 +35,9 @@ def test_imports():
         "pyaudio",
         "requests",
         "openai",
+        "mss",
+        "PIL",
+        "jeepney",
     ]
 
     print("Testing required modules...")

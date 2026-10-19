@@ -9,6 +9,7 @@ A Python application that provides real-time speech transcription with interacti
 - **Topic Explanations**: Get summaries, technical challenges, and command examples for various tech topics
 - **Modern GUI**: Clean, responsive interface built with tkinter
 - **AI-Enhanced Analysis**: OpenAI integration with Responses API, streaming, and adaptive question types
+- Assist modes, chosen with radio buttons: Transcription, Voice, Window, and Screen
 - **Two install profiles**: Lite (small, online STT) and Full (offline Whisper)
 
 ## Installation
@@ -98,6 +99,16 @@ run.bat          # Windows
 
 Set `OPENAI_API_KEY` for AI analysis. See [OPENAI_SETUP.md](OPENAI_SETUP.md) for model and API options.
 
+## Assist modes
+
+The Assist radios sit under the main buttons. Transcription is the default and keeps the existing keyword analysis.
+
+Voice speaks the reply and pauses the microphone while the audio plays. Window attaches the foreground window, or the last window that was in front of this app. Screen attaches the display under the pointer. Screenshots are sent at the captured resolution. The image is shrunk only when the API would reject it, or when the file is still too large after a high-quality JPEG at the same pixel size.
+
+On Linux with Wayland, capture goes through the desktop screenshot portal. Window mode asks that portal which window to share. macOS needs Screen Recording permission for the terminal that launched the app.
+
+Rollback: set `ASSIST_MODES_ENABLED` to `False` in `assist_mode.py`. The radios disappear and the app stays in transcription mode.
+
 Important: `uv sync` without `--extra whisper` installs the Lite profile and removes Whisper. After `setup_uv.bat --full`, use `run.bat` or always sync with `--extra whisper`.
 
 ### Environment variables
@@ -152,6 +163,8 @@ After setup on each platform:
 - [ ] Lite: Google STT transcribes (FLAC + network required)
 - [ ] Full: Whisper transcribes offline
 - [ ] AI analysis updates when keywords are spoken (with API key)
+- [ ] Assist radios switch among Transcription, Voice, Window, and Screen
+- [ ] Window or Screen mode keeps a native-resolution screenshot in the request
 
 ## License
 
