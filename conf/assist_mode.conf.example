@@ -1,4 +1,6 @@
-# Assist mode radio selection.
-# mode is one of: transcription, voice, window, screen
+# Assist controls. Transcription and voice can both be on.
+# vision is one of: off, window, screen
 # Rollback for the whole feature is ASSIST_MODES_ENABLED in assist_mode.py.
-mode = transcription
+transcription = true
+voice = false
+vision = off
