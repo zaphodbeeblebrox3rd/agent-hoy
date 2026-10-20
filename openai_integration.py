@@ -67,7 +67,10 @@ class OpenAIAnalyzer:
         self.rate_limit_tracker["token_count"] += tokens_used
 
     def _get_cache_key(self, prompt: str, context: str) -> str:
-        content = f"{openai_config.model}:{prompt}:{context}"
+        content = (
+            f"{openai_config.model}:{openai_config.reasoning_effort}:"
+            f"{prompt}:{context}"
+        )
         return hashlib.md5(content.encode()).hexdigest()
 
     def _build_responses_kwargs(

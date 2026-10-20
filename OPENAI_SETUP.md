@@ -38,13 +38,21 @@ The combobox is disabled when OpenAI is not configured (template fallback mode).
 
 Rollback: set `INCLUDE_LATEST_PREMIUM_MODELS = False` in `openai_config.py` to hide GPT-5.6, GPT-6, and Pro tiers from the combobox. You can still set those model ids via `OPENAI_MODEL` or `conf/openai_model.conf`.
 
-### Model selection precedence
+### In-app effort slider
 
-1. `OPENAI_MODEL` environment variable (startup override)
+Use the Effort slider next to the Model combobox to set reasoning effort (`low`, `medium`, `high`, `xhigh`, `max`). Higher effort spends more compute before answering. The slider is enabled for GPT-5 / GPT-6 reasoning models and disabled for GPT-4.x (temperature) models.
+
+The selection is saved as `reasoning_effort` in `conf/openai_model.conf`.
+
+Rollback: set `SHOW_EFFORT_SLIDER = False` in `openai_config.py`, or override with `OPENAI_REASONING_EFFORT`.
+
+### Model and effort selection precedence
+
+1. `OPENAI_MODEL` / `OPENAI_REASONING_EFFORT` environment variables (startup override)
 2. `conf/openai_model.conf` (persisted from UI)
-3. Default: `gpt-4.1-mini`
+3. Defaults: `gpt-4.1-mini` and `low` effort
 
-Rollback: delete `conf/openai_model.conf` or set `OPENAI_MODEL`.
+Rollback: delete `conf/openai_model.conf` or set the env vars.
 
 ### Environment variables
 

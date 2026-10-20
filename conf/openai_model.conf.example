@@ -8,7 +8,8 @@
 #   gpt-5.5-pro, gpt-5.4-pro, gpt-5.2-pro
 
 model = gpt-4.1-mini
+reasoning_effort = low
 
-# GPT-5 / GPT-6 reasoning models (optional; used when a gpt-5* or gpt-6* model is selected):
-# reasoning_effort = low
+# GPT-5 / GPT-6 reasoning models:
+# reasoning_effort = low | medium | high | xhigh | max
 # text_verbosity = medium

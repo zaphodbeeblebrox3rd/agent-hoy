@@ -6,11 +6,26 @@ from typing import Dict, List, Optional, Tuple
 
 CONF_DIR = "conf"
 DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_REASONING_EFFORT = "low"
 MODEL_CONFIG_FILE = "openai_model.conf"
 
 # Rollback: set False to hide GPT-6 / Pro / GPT-5.6 tiers from the Model combobox.
 # Persisted OPENAI_MODEL / conf/openai_model.conf values still work if set manually.
 INCLUDE_LATEST_PREMIUM_MODELS = True
+
+# Rollback: set False to hide the Effort slider from the toolbar.
+SHOW_EFFORT_SLIDER = True
+
+# Discrete effort steps for the toolbar slider (API reasoning.effort values).
+# "none" is omitted: several GPT-6 flagship models reject it.
+REASONING_EFFORT_LEVELS: List[str] = ["low", "medium", "high", "xhigh", "max"]
+REASONING_EFFORT_LABELS: Dict[str, str] = {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "xhigh": "Extra",
+    "max": "Max",
+}
 
 # (combobox label, API model id) — compatibility and mid-tier options
 _BASE_MODELS: List[Tuple[str, str]] = [
@@ -105,6 +120,37 @@ def is_reasoning_model(model: str) -> bool:
     return "chat" not in normalized
 
 
+def normalize_reasoning_effort(value: str) -> str:
+    """Map a user/env/conf value onto a supported effort level."""
+    normalized = (value or "").strip().lower()
+    aliases = {
+        "extra": "xhigh",
+        "extra-high": "xhigh",
+        "extrahigh": "xhigh",
+        "x-high": "xhigh",
+        "maximum": "max",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized in REASONING_EFFORT_LEVELS:
+        return normalized
+    return DEFAULT_REASONING_EFFORT
+
+
+def reasoning_effort_index(effort: str) -> int:
+    normalized = normalize_reasoning_effort(effort)
+    try:
+        return REASONING_EFFORT_LEVELS.index(normalized)
+    except ValueError:
+        return REASONING_EFFORT_LEVELS.index(DEFAULT_REASONING_EFFORT)
+
+
+def reasoning_effort_label(effort: str) -> str:
+    return REASONING_EFFORT_LABELS.get(
+        normalize_reasoning_effort(effort),
+        REASONING_EFFORT_LABELS[DEFAULT_REASONING_EFFORT],
+    )
+
+
 def _resolve_model_config_path() -> str:
     config_path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
     if os.path.exists(config_path):
@@ -115,11 +161,12 @@ def _resolve_model_config_path() -> str:
     return config_path
 
 
-def load_persisted_model() -> Optional[str]:
-    """Load model id from conf/openai_model.conf."""
+def load_persisted_openai_settings() -> Dict[str, str]:
+    """Load model / effort keys from conf/openai_model.conf."""
     path = _resolve_model_config_path()
+    settings: Dict[str, str] = {}
     if not os.path.exists(path):
-        return None
+        return settings
 
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -128,24 +175,66 @@ def load_persisted_model() -> Optional[str]:
                 if not stripped or stripped.startswith("#") or "=" not in stripped:
                     continue
                 key, value = (part.strip() for part in stripped.split("=", 1))
-                if key.lower() == "model" and value:
-                    return value
+                key_lower = key.lower()
+                if key_lower in ("model", "reasoning_effort") and value:
+                    settings[key_lower] = value
     except OSError as exc:
-        print(f"Error loading model from {path}: {exc}")
+        print(f"Error loading OpenAI settings from {path}: {exc}")
 
-    return None
+    return settings
+
+
+def load_persisted_model() -> Optional[str]:
+    """Load model id from conf/openai_model.conf."""
+    return load_persisted_openai_settings().get("model")
+
+
+def load_persisted_reasoning_effort() -> Optional[str]:
+    """Load reasoning effort from conf/openai_model.conf."""
+    value = load_persisted_openai_settings().get("reasoning_effort")
+    if not value:
+        return None
+    return normalize_reasoning_effort(value)
+
+
+def save_persisted_openai_settings(
+    model_id: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
+) -> None:
+    """Save model and/or effort to conf/openai_model.conf, preserving other keys."""
+    os.makedirs(CONF_DIR, exist_ok=True)
+    path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
+    current = load_persisted_openai_settings()
+    if model_id:
+        current["model"] = model_id
+    if reasoning_effort:
+        current["reasoning_effort"] = normalize_reasoning_effort(reasoning_effort)
+
+    if "model" not in current:
+        current["model"] = DEFAULT_MODEL
+    if "reasoning_effort" not in current:
+        current["reasoning_effort"] = DEFAULT_REASONING_EFFORT
+
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "# OpenAI model selection (overrides default; OPENAI_MODEL / "
+                "OPENAI_REASONING_EFFORT env still win on startup)\n"
+            )
+            handle.write(f"model = {current['model']}\n")
+            handle.write(f"reasoning_effort = {current['reasoning_effort']}\n")
+    except OSError as exc:
+        print(f"Error saving OpenAI settings to {path}: {exc}")
 
 
 def save_persisted_model(model_id: str) -> None:
     """Save model id to conf/openai_model.conf."""
-    os.makedirs(CONF_DIR, exist_ok=True)
-    path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("# OpenAI model selection (overrides default; OPENAI_MODEL env still wins on startup)\n")
-            handle.write(f"model = {model_id}\n")
-    except OSError as exc:
-        print(f"Error saving model to {path}: {exc}")
+    save_persisted_openai_settings(model_id=model_id)
+
+
+def save_persisted_reasoning_effort(effort: str) -> None:
+    """Save reasoning effort to conf/openai_model.conf."""
+    save_persisted_openai_settings(reasoning_effort=effort)
 
 
 def resolve_startup_model() -> str:
@@ -159,6 +248,19 @@ def resolve_startup_model() -> str:
         return persisted
 
     return DEFAULT_MODEL
+
+
+def resolve_startup_reasoning_effort() -> str:
+    """OPENAI_REASONING_EFFORT env > persisted conf > default."""
+    env_effort = os.getenv("OPENAI_REASONING_EFFORT")
+    if env_effort:
+        return normalize_reasoning_effort(env_effort)
+
+    persisted = load_persisted_reasoning_effort()
+    if persisted:
+        return persisted
+
+    return DEFAULT_REASONING_EFFORT
 
 
 class OpenAIConfig:
@@ -197,7 +299,7 @@ class OpenAIConfig:
         self.model = resolve_startup_model()
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
         self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
-        self.reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "low")
+        self.reasoning_effort = resolve_startup_reasoning_effort()
         self.text_verbosity = os.getenv("OPENAI_TEXT_VERBOSITY", "medium")
 
         self.use_responses_api = _env_bool("USE_RESPONSES_API", True)
@@ -243,6 +345,15 @@ class OpenAIConfig:
 
     def get_model_label(self) -> str:
         return LABEL_BY_MODEL_ID.get(self.model, self.model)
+
+    def get_reasoning_effort(self) -> str:
+        return self.reasoning_effort
+
+    def set_reasoning_effort(self, effort: str) -> None:
+        self.reasoning_effort = normalize_reasoning_effort(effort)
+
+    def get_reasoning_effort_label(self) -> str:
+        return reasoning_effort_label(self.reasoning_effort)
 
     def is_current_model_reasoning(self) -> bool:
         return is_reasoning_model(self.model)

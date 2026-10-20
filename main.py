@@ -65,8 +65,13 @@ from image_payload import prepare_encoded
 from openai_config import (
     AVAILABLE_MODELS,
     MODEL_ID_BY_LABEL,
+    REASONING_EFFORT_LEVELS,
+    SHOW_EFFORT_SLIDER,
     openai_config,
+    reasoning_effort_index,
+    reasoning_effort_label,
     save_persisted_model,
+    save_persisted_reasoning_effort,
 )
 from screen_capture import capture_frame, foreign_window_id
 from voice_output import play_wav_bytes, synthesize_speech
@@ -266,6 +271,36 @@ class SpeechTranscriptionApp:
         )
         self.model_combo.pack(side=tk.LEFT, padx=(5, 0))
         self.model_combo.bind("<<ComboboxSelected>>", self.on_model_selected)
+
+        self.effort_frame = None
+        self.effort_scale = None
+        self.effort_value_label = None
+        self._effort_updating = False
+        if SHOW_EFFORT_SLIDER:
+            self.effort_frame = ttk.Frame(top_row)
+            self.effort_frame.pack(side=tk.LEFT, padx=(16, 0))
+
+            ttk.Label(self.effort_frame, text="Effort:").pack(side=tk.LEFT)
+
+            initial_effort = openai_config.get_reasoning_effort()
+            self.effort_scale = ttk.Scale(
+                self.effort_frame,
+                from_=0,
+                to=len(REASONING_EFFORT_LEVELS) - 1,
+                orient=tk.HORIZONTAL,
+                length=120,
+                command=self.on_effort_changed,
+            )
+            self.effort_scale.set(reasoning_effort_index(initial_effort))
+            self.effort_scale.pack(side=tk.LEFT, padx=(5, 6))
+
+            self.effort_value_label = ttk.Label(
+                self.effort_frame,
+                text=reasoning_effort_label(initial_effort),
+                width=7,
+            )
+            self.effort_value_label.pack(side=tk.LEFT)
+            self._sync_effort_slider_state()
 
         settings = load_assist_settings()
         self.transcription_assist = tk.BooleanVar(value=settings.transcription)
@@ -1145,8 +1180,67 @@ class SpeechTranscriptionApp:
     
     def _openai_status_text(self) -> str:
         if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
+            if openai_config.is_current_model_reasoning():
+                return (
+                    f"OpenAI: {openai_config.model} "
+                    f"({openai_config.get_reasoning_effort_label()} effort)"
+                )
             return f"OpenAI: {openai_config.model}"
         return "OpenAI: Template Mode"
+
+    def _sync_effort_slider_state(self) -> None:
+        """Enable the Effort slider only for reasoning models with OpenAI configured."""
+        if not SHOW_EFFORT_SLIDER or self.effort_scale is None:
+            return
+
+        openai_ready = (
+            OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available()
+        )
+        enabled = bool(openai_ready and openai_config.is_current_model_reasoning())
+        state = ["!disabled"] if enabled else ["disabled"]
+        self.effort_scale.state(state)
+        if self.effort_value_label is not None:
+            label = (
+                openai_config.get_reasoning_effort_label()
+                if enabled
+                else "N/A"
+            )
+            self.effort_value_label.config(text=label)
+
+    def on_effort_changed(self, value=None):
+        """Handle Effort slider moves on the toolbar."""
+        if not SHOW_EFFORT_SLIDER or self.effort_scale is None or self._effort_updating:
+            return
+        try:
+            if not openai_config.is_current_model_reasoning():
+                self._sync_effort_slider_state()
+                return
+
+            raw = float(value if value is not None else self.effort_scale.get())
+            index = int(round(raw))
+            index = max(0, min(index, len(REASONING_EFFORT_LEVELS) - 1))
+            # Snap the continuous ttk.Scale to discrete steps.
+            if abs(float(self.effort_scale.get()) - index) > 0.01:
+                self._effort_updating = True
+                try:
+                    self.effort_scale.set(index)
+                finally:
+                    self._effort_updating = False
+
+            effort = REASONING_EFFORT_LEVELS[index]
+            if self.effort_value_label is not None:
+                self.effort_value_label.config(text=reasoning_effort_label(effort))
+
+            if effort == openai_config.get_reasoning_effort():
+                return
+
+            openai_config.set_reasoning_effort(effort)
+            save_persisted_reasoning_effort(effort)
+            self.openai_status_label.config(text=self._openai_status_text())
+            self.update_ai_status(f"Effort changed to {effort}")
+            print(f"OpenAI reasoning effort set to {effort}")
+        except Exception as e:
+            print(f"Error changing OpenAI reasoning effort: {e}")
 
     def on_model_selected(self, _event=None):
         """Handle model combobox selection."""
@@ -1159,6 +1253,7 @@ class SpeechTranscriptionApp:
 
             openai_config.set_model(model_id)
             save_persisted_model(model_id)
+            self._sync_effort_slider_state()
             self.openai_status_label.config(text=self._openai_status_text())
             self.update_ai_status(f"Model changed to {model_id}")
             print(f"OpenAI model set to {model_id}")
