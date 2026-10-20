@@ -37,6 +37,17 @@ def test_openai_configuration():
         print(f"Streaming: {openai_config.stream_responses}")
         print(f"Max tokens: {openai_config.max_tokens}")
         assert len(AVAILABLE_MODELS) >= 10
+        model_ids = {model_id for _, model_id in AVAILABLE_MODELS}
+        for required in (
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.5-pro",
+            "gpt-5.4-pro",
+        ):
+            assert required in model_ids, f"missing latest/premium model: {required}"
         print(f"Available models in UI: {len(AVAILABLE_MODELS)}")
 
         if openai_config.is_configured():
@@ -71,12 +82,17 @@ def test_rollback_flags():
 
 
 def test_reasoning_model_detection():
-    print("\nTesting GPT-5 reasoning model detection...")
+    print("\nTesting GPT-5/GPT-6 reasoning model detection...")
     try:
         from openai_config import is_reasoning_model
 
         assert is_reasoning_model("gpt-5.4-mini") is True
         assert is_reasoning_model("gpt-5.5") is True
+        assert is_reasoning_model("gpt-5.5-pro") is True
+        assert is_reasoning_model("gpt-5.6-sol") is True
+        assert is_reasoning_model("gpt-6-astra") is True
+        assert is_reasoning_model("gpt-6.1-sol") is True
+        assert is_reasoning_model("gpt-6-luna") is True
         assert is_reasoning_model("gpt-5-chat-latest") is False
         assert is_reasoning_model("gpt-4.1-mini") is False
         print("OK reasoning model detection")
@@ -100,6 +116,11 @@ def test_responses_kwargs_builder():
         assert "temperature" not in gpt5_kwargs
         assert gpt5_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
         assert gpt5_kwargs["text"]["verbosity"] == openai_config.text_verbosity
+
+        openai_config.set_model("gpt-6-astra")
+        gpt6_kwargs = analyzer._build_responses_kwargs("test prompt")
+        assert "temperature" not in gpt6_kwargs
+        assert gpt6_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
 
         openai_config.set_model("gpt-4.1-mini")
         gpt4_kwargs = analyzer._build_responses_kwargs("test prompt")
@@ -144,7 +165,9 @@ def test_persist_model_round_trip():
             CONF_DIR,
             MODEL_CONFIG_FILE,
             load_persisted_model,
+            load_persisted_reasoning_effort,
             save_persisted_model,
+            save_persisted_reasoning_effort,
         )
 
         path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
@@ -155,6 +178,9 @@ def test_persist_model_round_trip():
 
         try:
             save_persisted_model("gpt-5.4-mini")
+            assert load_persisted_model() == "gpt-5.4-mini"
+            save_persisted_reasoning_effort("high")
+            assert load_persisted_reasoning_effort() == "high"
             assert load_persisted_model() == "gpt-5.4-mini"
             print("OK model persistence round-trip")
             return True
@@ -167,6 +193,60 @@ def test_persist_model_round_trip():
                     handle.write(backup)
     except Exception as e:
         print(f"FAIL model persistence: {e}")
+        return False
+
+
+def test_reasoning_effort_helpers():
+    print("\nTesting reasoning effort helpers...")
+    try:
+        from openai_config import (
+            REASONING_EFFORT_LEVELS,
+            normalize_reasoning_effort,
+            openai_config,
+            reasoning_effort_index,
+            reasoning_effort_label,
+        )
+
+        assert REASONING_EFFORT_LEVELS == ["low", "medium", "high", "xhigh", "max"]
+        assert normalize_reasoning_effort("Extra") == "xhigh"
+        assert normalize_reasoning_effort("nope") == "low"
+        assert reasoning_effort_index("high") == 2
+        assert reasoning_effort_label("xhigh") == "Extra"
+
+        original = openai_config.get_reasoning_effort()
+        openai_config.set_reasoning_effort("max")
+        assert openai_config.get_reasoning_effort() == "max"
+        openai_config.set_reasoning_effort(original)
+        print("OK reasoning effort helpers")
+        return True
+    except Exception as e:
+        print(f"FAIL reasoning effort helpers: {e}")
+        return False
+
+
+def test_cache_key_includes_effort():
+    print("\nTesting effort-aware cache keys...")
+    try:
+        from openai_config import openai_config
+        from openai_integration import OpenAIAnalyzer
+
+        analyzer = OpenAIAnalyzer()
+        original_model = openai_config.get_model()
+        original_effort = openai_config.get_reasoning_effort()
+
+        openai_config.set_model("gpt-5.4-mini")
+        openai_config.set_reasoning_effort("low")
+        key_a = analyzer._get_cache_key("prompt", "context")
+        openai_config.set_reasoning_effort("high")
+        key_b = analyzer._get_cache_key("prompt", "context")
+        assert key_a != key_b
+
+        openai_config.set_model(original_model)
+        openai_config.set_reasoning_effort(original_effort)
+        print("OK effort-aware cache keys")
+        return True
+    except Exception as e:
+        print(f"FAIL effort-aware cache keys: {e}")
         return False
 
 
@@ -247,6 +327,8 @@ def main():
         test_responses_kwargs_builder,
         test_cache_key_includes_model,
         test_persist_model_round_trip,
+        test_reasoning_effort_helpers,
+        test_cache_key_includes_effort,
         test_openai_analyzer,
         test_template_fallback,
         test_cost_calculation,

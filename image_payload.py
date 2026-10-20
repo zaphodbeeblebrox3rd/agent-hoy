@@ -40,11 +40,24 @@ class PreparedImage:
 # original detail keeps the server from shrinking a normal desktop screenshot.
 # Models that do not support original use high. None/None means the server
 # applies its own tile resize, so we do not pre-shrink.
+# GPT-6 / GPT-5.6: original up to 65535px/side; API rejects above 30k patches.
+# GPT-5.5 / GPT-5.4: original with 6000px and 10k-patch resize budgets.
 _MODEL_LIMITS = {
+    "gpt-6-astra": ImageLimits("original", 65535, None),
+    "gpt-6.1-sol": ImageLimits("original", 65535, None),
+    "gpt-6-sol": ImageLimits("original", 65535, None),
+    "gpt-6-luna": ImageLimits("original", 65535, None),
+    "gpt-5.6-sol": ImageLimits("original", 65535, None),
+    "gpt-5.6-terra": ImageLimits("original", 65535, None),
+    "gpt-5.6-luna": ImageLimits("original", 65535, None),
     "gpt-5.5": ImageLimits("original", 6000, 10_000),
+    "gpt-5.5-pro": ImageLimits("original", 6000, 10_000),
     "gpt-5.4": ImageLimits("original", 6000, 10_000),
+    "gpt-5.4-pro": ImageLimits("original", 6000, 10_000),
     "gpt-5.4-mini": ImageLimits("original", 6000, 10_000),
     "gpt-5.4-nano": ImageLimits("original", 6000, 10_000),
+    "gpt-5.2": ImageLimits("high", 2048, 6144),
+    "gpt-5.2-pro": ImageLimits("high", 2048, 6144),
     "gpt-4.1-mini": ImageLimits("high", 2048, 6144),
 }
 

@@ -1,0 +1,6 @@
+# UI preferences
+# Copy to ui.conf to customize (gitignored).
+
+# When true, the control toolbar starts collapsed to free vertical space.
+# Toggle in the app with the Toolbar button (rollback: TOOLBAR_COLLAPSE_ENABLED=False).
+toolbar_collapsed = false

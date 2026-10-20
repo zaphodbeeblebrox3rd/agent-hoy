@@ -6,10 +6,29 @@ from typing import Dict, List, Optional, Tuple
 
 CONF_DIR = "conf"
 DEFAULT_MODEL = "gpt-4.1-mini"
+DEFAULT_REASONING_EFFORT = "low"
 MODEL_CONFIG_FILE = "openai_model.conf"
 
-# (combobox label, API model id)
-AVAILABLE_MODELS: List[Tuple[str, str]] = [
+# Rollback: set False to hide GPT-6 / Pro / GPT-5.6 tiers from the Model combobox.
+# Persisted OPENAI_MODEL / conf/openai_model.conf values still work if set manually.
+INCLUDE_LATEST_PREMIUM_MODELS = True
+
+# Rollback: set False to hide the Effort slider from the toolbar.
+SHOW_EFFORT_SLIDER = True
+
+# Discrete effort steps for the toolbar slider (API reasoning.effort values).
+# "none" is omitted: several GPT-6 flagship models reject it.
+REASONING_EFFORT_LEVELS: List[str] = ["low", "medium", "high", "xhigh", "max"]
+REASONING_EFFORT_LABELS: Dict[str, str] = {
+    "low": "Low",
+    "medium": "Medium",
+    "high": "High",
+    "xhigh": "Extra",
+    "max": "Max",
+}
+
+# (combobox label, API model id) — compatibility and mid-tier options
+_BASE_MODELS: List[Tuple[str, str]] = [
     ("GPT-4o Mini", "gpt-4o-mini"),
     ("GPT-4o", "gpt-4o"),
     ("GPT-4.1 Nano", "gpt-4.1-nano"),
@@ -18,11 +37,67 @@ AVAILABLE_MODELS: List[Tuple[str, str]] = [
     ("GPT-5 Nano", "gpt-5-nano"),
     ("GPT-5 Mini", "gpt-5-mini"),
     ("GPT-5", "gpt-5"),
+    ("GPT-5.2", "gpt-5.2"),
     ("GPT-5.4 Nano", "gpt-5.4-nano"),
     ("GPT-5.4 Mini", "gpt-5.4-mini"),
     ("GPT-5.4", "gpt-5.4"),
     ("GPT-5.5", "gpt-5.5"),
 ]
+
+# Latest available and premium OpenAI models (GPT-5.2/5.4/5.5 Pro, GPT-5.6, GPT-6)
+_LATEST_PREMIUM_MODELS: List[Tuple[str, str]] = [
+    ("GPT-5.2 Pro", "gpt-5.2-pro"),
+    ("GPT-5.4 Pro", "gpt-5.4-pro"),
+    ("GPT-5.5 Pro", "gpt-5.5-pro"),
+    ("GPT-5.6 Luna", "gpt-5.6-luna"),
+    ("GPT-5.6 Terra", "gpt-5.6-terra"),
+    ("GPT-5.6 Sol", "gpt-5.6-sol"),
+    ("GPT-6 Luna", "gpt-6-luna"),
+    ("GPT-6 Sol", "gpt-6-sol"),
+    ("GPT-6.1 Sol", "gpt-6.1-sol"),
+    ("GPT-6 Astra", "gpt-6-astra"),
+]
+
+
+def _build_available_models() -> List[Tuple[str, str]]:
+    """Merge base and premium lists, keeping a stable label order for the UI."""
+    if not INCLUDE_LATEST_PREMIUM_MODELS:
+        return list(_BASE_MODELS)
+
+    # Insert Pro tiers next to their non-Pro siblings; append GPT-5.6 / GPT-6 at end.
+    by_id = {model_id: (label, model_id) for label, model_id in _BASE_MODELS}
+    for label, model_id in _LATEST_PREMIUM_MODELS:
+        by_id[model_id] = (label, model_id)
+
+    ordered_ids = [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "gpt-4.1-nano",
+        "gpt-4.1-mini",
+        "gpt-4.1",
+        "gpt-5-nano",
+        "gpt-5-mini",
+        "gpt-5",
+        "gpt-5.2",
+        "gpt-5.2-pro",
+        "gpt-5.4-nano",
+        "gpt-5.4-mini",
+        "gpt-5.4",
+        "gpt-5.4-pro",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+    ]
+    return [by_id[model_id] for model_id in ordered_ids if model_id in by_id]
+
+
+AVAILABLE_MODELS: List[Tuple[str, str]] = _build_available_models()
 
 MODEL_ID_BY_LABEL = {label: model_id for label, model_id in AVAILABLE_MODELS}
 LABEL_BY_MODEL_ID = {model_id: label for label, model_id in AVAILABLE_MODELS}
@@ -36,11 +111,44 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def is_reasoning_model(model: str) -> bool:
-    """GPT-5 reasoning models do not support temperature."""
+    """GPT-5+ and GPT-6 reasoning models do not support temperature."""
     normalized = model.lower()
+    if normalized.startswith("gpt-6"):
+        return True
     if not normalized.startswith("gpt-5"):
         return False
     return "chat" not in normalized
+
+
+def normalize_reasoning_effort(value: str) -> str:
+    """Map a user/env/conf value onto a supported effort level."""
+    normalized = (value or "").strip().lower()
+    aliases = {
+        "extra": "xhigh",
+        "extra-high": "xhigh",
+        "extrahigh": "xhigh",
+        "x-high": "xhigh",
+        "maximum": "max",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized in REASONING_EFFORT_LEVELS:
+        return normalized
+    return DEFAULT_REASONING_EFFORT
+
+
+def reasoning_effort_index(effort: str) -> int:
+    normalized = normalize_reasoning_effort(effort)
+    try:
+        return REASONING_EFFORT_LEVELS.index(normalized)
+    except ValueError:
+        return REASONING_EFFORT_LEVELS.index(DEFAULT_REASONING_EFFORT)
+
+
+def reasoning_effort_label(effort: str) -> str:
+    return REASONING_EFFORT_LABELS.get(
+        normalize_reasoning_effort(effort),
+        REASONING_EFFORT_LABELS[DEFAULT_REASONING_EFFORT],
+    )
 
 
 def _resolve_model_config_path() -> str:
@@ -53,11 +161,12 @@ def _resolve_model_config_path() -> str:
     return config_path
 
 
-def load_persisted_model() -> Optional[str]:
-    """Load model id from conf/openai_model.conf."""
+def load_persisted_openai_settings() -> Dict[str, str]:
+    """Load model / effort keys from conf/openai_model.conf."""
     path = _resolve_model_config_path()
+    settings: Dict[str, str] = {}
     if not os.path.exists(path):
-        return None
+        return settings
 
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -66,24 +175,66 @@ def load_persisted_model() -> Optional[str]:
                 if not stripped or stripped.startswith("#") or "=" not in stripped:
                     continue
                 key, value = (part.strip() for part in stripped.split("=", 1))
-                if key.lower() == "model" and value:
-                    return value
+                key_lower = key.lower()
+                if key_lower in ("model", "reasoning_effort") and value:
+                    settings[key_lower] = value
     except OSError as exc:
-        print(f"Error loading model from {path}: {exc}")
+        print(f"Error loading OpenAI settings from {path}: {exc}")
 
-    return None
+    return settings
+
+
+def load_persisted_model() -> Optional[str]:
+    """Load model id from conf/openai_model.conf."""
+    return load_persisted_openai_settings().get("model")
+
+
+def load_persisted_reasoning_effort() -> Optional[str]:
+    """Load reasoning effort from conf/openai_model.conf."""
+    value = load_persisted_openai_settings().get("reasoning_effort")
+    if not value:
+        return None
+    return normalize_reasoning_effort(value)
+
+
+def save_persisted_openai_settings(
+    model_id: Optional[str] = None,
+    reasoning_effort: Optional[str] = None,
+) -> None:
+    """Save model and/or effort to conf/openai_model.conf, preserving other keys."""
+    os.makedirs(CONF_DIR, exist_ok=True)
+    path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
+    current = load_persisted_openai_settings()
+    if model_id:
+        current["model"] = model_id
+    if reasoning_effort:
+        current["reasoning_effort"] = normalize_reasoning_effort(reasoning_effort)
+
+    if "model" not in current:
+        current["model"] = DEFAULT_MODEL
+    if "reasoning_effort" not in current:
+        current["reasoning_effort"] = DEFAULT_REASONING_EFFORT
+
+    try:
+        with open(path, "w", encoding="utf-8") as handle:
+            handle.write(
+                "# OpenAI model selection (overrides default; OPENAI_MODEL / "
+                "OPENAI_REASONING_EFFORT env still win on startup)\n"
+            )
+            handle.write(f"model = {current['model']}\n")
+            handle.write(f"reasoning_effort = {current['reasoning_effort']}\n")
+    except OSError as exc:
+        print(f"Error saving OpenAI settings to {path}: {exc}")
 
 
 def save_persisted_model(model_id: str) -> None:
     """Save model id to conf/openai_model.conf."""
-    os.makedirs(CONF_DIR, exist_ok=True)
-    path = os.path.join(CONF_DIR, MODEL_CONFIG_FILE)
-    try:
-        with open(path, "w", encoding="utf-8") as handle:
-            handle.write("# OpenAI model selection (overrides default; OPENAI_MODEL env still wins on startup)\n")
-            handle.write(f"model = {model_id}\n")
-    except OSError as exc:
-        print(f"Error saving model to {path}: {exc}")
+    save_persisted_openai_settings(model_id=model_id)
+
+
+def save_persisted_reasoning_effort(effort: str) -> None:
+    """Save reasoning effort to conf/openai_model.conf."""
+    save_persisted_openai_settings(reasoning_effort=effort)
 
 
 def resolve_startup_model() -> str:
@@ -99,22 +250,47 @@ def resolve_startup_model() -> str:
     return DEFAULT_MODEL
 
 
+def resolve_startup_reasoning_effort() -> str:
+    """OPENAI_REASONING_EFFORT env > persisted conf > default."""
+    env_effort = os.getenv("OPENAI_REASONING_EFFORT")
+    if env_effort:
+        return normalize_reasoning_effort(env_effort)
+
+    persisted = load_persisted_reasoning_effort()
+    if persisted:
+        return persisted
+
+    return DEFAULT_REASONING_EFFORT
+
+
 class OpenAIConfig:
     """Configuration for OpenAI API integration."""
 
+    # Standard short-context rates per 1M tokens (see OpenAI pricing docs).
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
         "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
         "gpt-4.1": {"input": 2.00, "output": 8.00},
         "gpt-4o-mini": {"input": 0.15, "output": 0.60},
         "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-5-nano": {"input": 0.10, "output": 0.40},
+        "gpt-5-nano": {"input": 0.05, "output": 0.40},
         "gpt-5-mini": {"input": 0.25, "output": 2.00},
         "gpt-5": {"input": 1.25, "output": 10.00},
-        "gpt-5.4-nano": {"input": 0.20, "output": 0.80},
+        "gpt-5.2": {"input": 1.75, "output": 14.00},
+        "gpt-5.2-pro": {"input": 21.00, "output": 168.00},
+        "gpt-5.4-nano": {"input": 0.20, "output": 1.25},
         "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
         "gpt-5.4": {"input": 2.50, "output": 15.00},
+        "gpt-5.4-pro": {"input": 30.00, "output": 180.00},
         "gpt-5.5": {"input": 5.00, "output": 30.00},
+        "gpt-5.5-pro": {"input": 30.00, "output": 180.00},
+        "gpt-5.6-luna": {"input": 0.20, "output": 1.20},
+        "gpt-5.6-terra": {"input": 2.00, "output": 12.00},
+        "gpt-5.6-sol": {"input": 4.00, "output": 20.00},
+        "gpt-6-luna": {"input": 0.10, "output": 0.50},
+        "gpt-6-sol": {"input": 2.00, "output": 10.00},
+        "gpt-6.1-sol": {"input": 2.00, "output": 10.00},
+        "gpt-6-astra": {"input": 10.00, "output": 50.00},
     }
 
     def __init__(self):
@@ -123,7 +299,7 @@ class OpenAIConfig:
         self.model = resolve_startup_model()
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
         self.temperature = float(os.getenv("OPENAI_TEMPERATURE", "0.7"))
-        self.reasoning_effort = os.getenv("OPENAI_REASONING_EFFORT", "low")
+        self.reasoning_effort = resolve_startup_reasoning_effort()
         self.text_verbosity = os.getenv("OPENAI_TEXT_VERBOSITY", "medium")
 
         self.use_responses_api = _env_bool("USE_RESPONSES_API", True)
@@ -169,6 +345,15 @@ class OpenAIConfig:
 
     def get_model_label(self) -> str:
         return LABEL_BY_MODEL_ID.get(self.model, self.model)
+
+    def get_reasoning_effort(self) -> str:
+        return self.reasoning_effort
+
+    def set_reasoning_effort(self, effort: str) -> None:
+        self.reasoning_effort = normalize_reasoning_effort(effort)
+
+    def get_reasoning_effort_label(self) -> str:
+        return reasoning_effort_label(self.reasoning_effort)
 
     def is_current_model_reasoning(self) -> bool:
         return is_reasoning_model(self.model)

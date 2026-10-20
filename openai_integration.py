@@ -67,7 +67,10 @@ class OpenAIAnalyzer:
         self.rate_limit_tracker["token_count"] += tokens_used
 
     def _get_cache_key(self, prompt: str, context: str) -> str:
-        content = f"{openai_config.model}:{prompt}:{context}"
+        content = (
+            f"{openai_config.model}:{openai_config.reasoning_effort}:"
+            f"{prompt}:{context}"
+        )
         return hashlib.md5(content.encode()).hexdigest()
 
     def _build_responses_kwargs(
@@ -498,7 +501,7 @@ class OpenAIAnalyzer:
             print(f"OpenAI API error: {e}")
             if "temperature" in error_text and openai_config.is_current_model_reasoning():
                 print(
-                    "Hint: GPT-5 reasoning models do not support temperature; "
+                    "Hint: GPT-5/GPT-6 reasoning models do not support temperature; "
                     "use OPENAI_REASONING_EFFORT and OPENAI_TEXT_VERBOSITY instead."
                 )
             if use_fallback and openai_config.use_fallback_on_error:

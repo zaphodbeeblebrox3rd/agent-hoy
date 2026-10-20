@@ -93,7 +93,7 @@ Shipped defaults live under `conf/*.conf.example`. To customize without editing 
 ```bash
 cp conf/corrections.conf.example conf/corrections.conf
 cp conf/tech_keywords.conf.example conf/tech_keywords.conf
-# similarly for topic_explanations, question_patterns, question_type_patterns, openai_model
+# similarly for topic_explanations, question_patterns, question_type_patterns, openai_model, ui
 ```
 
 Rollback any override by deleting the corresponding `conf/*.conf` file; the app falls back to the `.example` defaults.
@@ -112,6 +112,8 @@ run.bat          # Windows
 ```
 
 Set `OPENAI_API_KEY` for AI analysis. See [OPENAI_SETUP.md](OPENAI_SETUP.md) for model and API options.
+
+Use Hide Toolbar / Show Toolbar on the control strip to collapse or expand the full toolbar and free vertical space. The choice is saved in `conf/ui.conf`. Rollback: set `TOOLBAR_COLLAPSE_ENABLED` to `False` in `ui_prefs.py`.
 
 ## Assist controls
 
