@@ -37,6 +37,17 @@ def test_openai_configuration():
         print(f"Streaming: {openai_config.stream_responses}")
         print(f"Max tokens: {openai_config.max_tokens}")
         assert len(AVAILABLE_MODELS) >= 10
+        model_ids = {model_id for _, model_id in AVAILABLE_MODELS}
+        for required in (
+            "gpt-6-astra",
+            "gpt-6.1-sol",
+            "gpt-6-sol",
+            "gpt-6-luna",
+            "gpt-5.6-sol",
+            "gpt-5.5-pro",
+            "gpt-5.4-pro",
+        ):
+            assert required in model_ids, f"missing latest/premium model: {required}"
         print(f"Available models in UI: {len(AVAILABLE_MODELS)}")
 
         if openai_config.is_configured():
@@ -71,12 +82,17 @@ def test_rollback_flags():
 
 
 def test_reasoning_model_detection():
-    print("\nTesting GPT-5 reasoning model detection...")
+    print("\nTesting GPT-5/GPT-6 reasoning model detection...")
     try:
         from openai_config import is_reasoning_model
 
         assert is_reasoning_model("gpt-5.4-mini") is True
         assert is_reasoning_model("gpt-5.5") is True
+        assert is_reasoning_model("gpt-5.5-pro") is True
+        assert is_reasoning_model("gpt-5.6-sol") is True
+        assert is_reasoning_model("gpt-6-astra") is True
+        assert is_reasoning_model("gpt-6.1-sol") is True
+        assert is_reasoning_model("gpt-6-luna") is True
         assert is_reasoning_model("gpt-5-chat-latest") is False
         assert is_reasoning_model("gpt-4.1-mini") is False
         print("OK reasoning model detection")
@@ -100,6 +116,11 @@ def test_responses_kwargs_builder():
         assert "temperature" not in gpt5_kwargs
         assert gpt5_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
         assert gpt5_kwargs["text"]["verbosity"] == openai_config.text_verbosity
+
+        openai_config.set_model("gpt-6-astra")
+        gpt6_kwargs = analyzer._build_responses_kwargs("test prompt")
+        assert "temperature" not in gpt6_kwargs
+        assert gpt6_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
 
         openai_config.set_model("gpt-4.1-mini")
         gpt4_kwargs = analyzer._build_responses_kwargs("test prompt")

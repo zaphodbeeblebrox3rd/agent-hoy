@@ -498,7 +498,7 @@ class OpenAIAnalyzer:
             print(f"OpenAI API error: {e}")
             if "temperature" in error_text and openai_config.is_current_model_reasoning():
                 print(
-                    "Hint: GPT-5 reasoning models do not support temperature; "
+                    "Hint: GPT-5/GPT-6 reasoning models do not support temperature; "
                     "use OPENAI_REASONING_EFFORT and OPENAI_TEXT_VERBOSITY instead."
                 )
             if use_fallback and openai_config.use_fallback_on_error:

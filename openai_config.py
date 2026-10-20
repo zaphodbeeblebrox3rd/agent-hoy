@@ -8,8 +8,12 @@ CONF_DIR = "conf"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MODEL_CONFIG_FILE = "openai_model.conf"
 
-# (combobox label, API model id)
-AVAILABLE_MODELS: List[Tuple[str, str]] = [
+# Rollback: set False to hide GPT-6 / Pro / GPT-5.6 tiers from the Model combobox.
+# Persisted OPENAI_MODEL / conf/openai_model.conf values still work if set manually.
+INCLUDE_LATEST_PREMIUM_MODELS = True
+
+# (combobox label, API model id) — compatibility and mid-tier options
+_BASE_MODELS: List[Tuple[str, str]] = [
     ("GPT-4o Mini", "gpt-4o-mini"),
     ("GPT-4o", "gpt-4o"),
     ("GPT-4.1 Nano", "gpt-4.1-nano"),
@@ -18,11 +22,67 @@ AVAILABLE_MODELS: List[Tuple[str, str]] = [
     ("GPT-5 Nano", "gpt-5-nano"),
     ("GPT-5 Mini", "gpt-5-mini"),
     ("GPT-5", "gpt-5"),
+    ("GPT-5.2", "gpt-5.2"),
     ("GPT-5.4 Nano", "gpt-5.4-nano"),
     ("GPT-5.4 Mini", "gpt-5.4-mini"),
     ("GPT-5.4", "gpt-5.4"),
     ("GPT-5.5", "gpt-5.5"),
 ]
+
+# Latest available and premium OpenAI models (GPT-5.2/5.4/5.5 Pro, GPT-5.6, GPT-6)
+_LATEST_PREMIUM_MODELS: List[Tuple[str, str]] = [
+    ("GPT-5.2 Pro", "gpt-5.2-pro"),
+    ("GPT-5.4 Pro", "gpt-5.4-pro"),
+    ("GPT-5.5 Pro", "gpt-5.5-pro"),
+    ("GPT-5.6 Luna", "gpt-5.6-luna"),
+    ("GPT-5.6 Terra", "gpt-5.6-terra"),
+    ("GPT-5.6 Sol", "gpt-5.6-sol"),
+    ("GPT-6 Luna", "gpt-6-luna"),
+    ("GPT-6 Sol", "gpt-6-sol"),
+    ("GPT-6.1 Sol", "gpt-6.1-sol"),
+    ("GPT-6 Astra", "gpt-6-astra"),
+]
+
+
+def _build_available_models() -> List[Tuple[str, str]]:
+    """Merge base and premium lists, keeping a stable label order for the UI."""
+    if not INCLUDE_LATEST_PREMIUM_MODELS:
+        return list(_BASE_MODELS)
+
+    # Insert Pro tiers next to their non-Pro siblings; append GPT-5.6 / GPT-6 at end.
+    by_id = {model_id: (label, model_id) for label, model_id in _BASE_MODELS}
+    for label, model_id in _LATEST_PREMIUM_MODELS:
+        by_id[model_id] = (label, model_id)
+
+    ordered_ids = [
+        "gpt-4o-mini",
+        "gpt-4o",
+        "gpt-4.1-nano",
+        "gpt-4.1-mini",
+        "gpt-4.1",
+        "gpt-5-nano",
+        "gpt-5-mini",
+        "gpt-5",
+        "gpt-5.2",
+        "gpt-5.2-pro",
+        "gpt-5.4-nano",
+        "gpt-5.4-mini",
+        "gpt-5.4",
+        "gpt-5.4-pro",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.6-luna",
+        "gpt-5.6-terra",
+        "gpt-5.6-sol",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "gpt-6.1-sol",
+        "gpt-6-astra",
+    ]
+    return [by_id[model_id] for model_id in ordered_ids if model_id in by_id]
+
+
+AVAILABLE_MODELS: List[Tuple[str, str]] = _build_available_models()
 
 MODEL_ID_BY_LABEL = {label: model_id for label, model_id in AVAILABLE_MODELS}
 LABEL_BY_MODEL_ID = {model_id: label for label, model_id in AVAILABLE_MODELS}
@@ -36,8 +96,10 @@ def _env_bool(name: str, default: bool) -> bool:
 
 
 def is_reasoning_model(model: str) -> bool:
-    """GPT-5 reasoning models do not support temperature."""
+    """GPT-5+ and GPT-6 reasoning models do not support temperature."""
     normalized = model.lower()
+    if normalized.startswith("gpt-6"):
+        return True
     if not normalized.startswith("gpt-5"):
         return False
     return "chat" not in normalized
@@ -102,19 +164,31 @@ def resolve_startup_model() -> str:
 class OpenAIConfig:
     """Configuration for OpenAI API integration."""
 
+    # Standard short-context rates per 1M tokens (see OpenAI pricing docs).
     MODEL_PRICING: Dict[str, Dict[str, float]] = {
         "gpt-4.1-mini": {"input": 0.40, "output": 1.60},
         "gpt-4.1-nano": {"input": 0.10, "output": 0.40},
         "gpt-4.1": {"input": 2.00, "output": 8.00},
         "gpt-4o-mini": {"input": 0.15, "output": 0.60},
         "gpt-4o": {"input": 2.50, "output": 10.00},
-        "gpt-5-nano": {"input": 0.10, "output": 0.40},
+        "gpt-5-nano": {"input": 0.05, "output": 0.40},
         "gpt-5-mini": {"input": 0.25, "output": 2.00},
         "gpt-5": {"input": 1.25, "output": 10.00},
-        "gpt-5.4-nano": {"input": 0.20, "output": 0.80},
+        "gpt-5.2": {"input": 1.75, "output": 14.00},
+        "gpt-5.2-pro": {"input": 21.00, "output": 168.00},
+        "gpt-5.4-nano": {"input": 0.20, "output": 1.25},
         "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
         "gpt-5.4": {"input": 2.50, "output": 15.00},
+        "gpt-5.4-pro": {"input": 30.00, "output": 180.00},
         "gpt-5.5": {"input": 5.00, "output": 30.00},
+        "gpt-5.5-pro": {"input": 30.00, "output": 180.00},
+        "gpt-5.6-luna": {"input": 0.20, "output": 1.20},
+        "gpt-5.6-terra": {"input": 2.00, "output": 12.00},
+        "gpt-5.6-sol": {"input": 4.00, "output": 20.00},
+        "gpt-6-luna": {"input": 0.10, "output": 0.50},
+        "gpt-6-sol": {"input": 2.00, "output": 10.00},
+        "gpt-6.1-sol": {"input": 2.00, "output": 10.00},
+        "gpt-6-astra": {"input": 10.00, "output": 50.00},
     }
 
     def __init__(self):

@@ -62,7 +62,19 @@ def test_persist_assist_mode(tmp_dir: str):
 def test_native_screenshots_are_not_shrunk():
     desktop = (1920, 1080)
     four_k = (3840, 2160)
-    for model in ("gpt-5.4", "gpt-5.4-mini", "gpt-5.5", "gpt-4o", "gpt-4.1", "gpt-4.1-mini"):
+    for model in (
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.5",
+        "gpt-5.5-pro",
+        "gpt-5.6-sol",
+        "gpt-6-astra",
+        "gpt-6.1-sol",
+        "gpt-6-luna",
+        "gpt-4o",
+        "gpt-4.1",
+        "gpt-4.1-mini",
+    ):
         assert must_shrink_locally(*desktop, limits_for_model(model)) is None
         assert must_shrink_locally(*four_k, limits_for_model(model)) is None
 

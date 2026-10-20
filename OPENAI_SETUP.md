@@ -32,9 +32,11 @@ Create `openai_key.txt` in the project root (gitignored).
 
 ### In-app model switcher
 
-Use the Model combobox in the control panel to switch between GPT-4.x and GPT-5.x models. The selection is saved to `conf/openai_model.conf` and restored on the next launch.
+Use the Model combobox in the control panel to switch between GPT-4.x, GPT-5.x, GPT-5.6, and GPT-6 models, including Pro and Astra premium tiers. The selection is saved to `conf/openai_model.conf` and restored on the next launch.
 
 The combobox is disabled when OpenAI is not configured (template fallback mode).
+
+Rollback: set `INCLUDE_LATEST_PREMIUM_MODELS = False` in `openai_config.py` to hide GPT-5.6, GPT-6, and Pro tiers from the combobox. You can still set those model ids via `OPENAI_MODEL` or `conf/openai_model.conf`.
 
 ### Model selection precedence
 
@@ -54,16 +56,18 @@ Rollback: delete `conf/openai_model.conf` or set `OPENAI_MODEL`.
 | `OPENAI_STREAM` | `true` | Stream tokens to UI |
 | `OPENAI_MAX_TOKENS` | `1000` | Max output tokens |
 | `OPENAI_TEMPERATURE` | `0.7` | Sampling temperature (GPT-4.x only) |
-| `OPENAI_REASONING_EFFORT` | `low` | GPT-5 reasoning effort |
-| `OPENAI_TEXT_VERBOSITY` | `medium` | GPT-5 output verbosity |
+| `OPENAI_REASONING_EFFORT` | `low` | GPT-5 / GPT-6 reasoning effort |
+| `OPENAI_TEXT_VERBOSITY` | `medium` | GPT-5 / GPT-6 output verbosity |
 | `OPENAI_CACHE_RESPONSES` | `true` | File cache in `cache/` |
 | `OPENAI_CACHE_HOURS` | `24` | Cache TTL |
 
-### GPT-5 models
+### GPT-5 and GPT-6 models
 
-GPT-5 family models use the Responses API with `reasoning.effort` and `text.verbosity` instead of `temperature`. Keep `USE_RESPONSES_API=true` when using GPT-5 models.
+GPT-5, GPT-5.6, and GPT-6 family models use the Responses API with `reasoning.effort` and `text.verbosity` instead of `temperature`. Keep `USE_RESPONSES_API=true` when using these models.
 
-Optional GPT-5 tuning:
+Latest and premium options in the combobox include `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6-luna`, `gpt-5.6-sol`, `gpt-5.5-pro`, and `gpt-5.4-pro`.
+
+Optional reasoning tuning:
 
 ```bash
 export OPENAI_REASONING_EFFORT=low
@@ -89,6 +93,12 @@ uv run python main.py
 | gpt-5.4-mini | $0.75 | $4.50 |
 | gpt-5.4 | $2.50 | $15.00 |
 | gpt-5.5 | $5.00 | $30.00 |
+| gpt-5.5-pro | $30.00 | $180.00 |
+| gpt-5.6-luna | $0.20 | $1.20 |
+| gpt-5.6-sol | $4.00 | $20.00 |
+| gpt-6-luna | $0.10 | $0.50 |
+| gpt-6.1-sol | $2.00 | $10.00 |
+| gpt-6-astra | $10.00 | $50.00 |
 
 ## Testing
 
