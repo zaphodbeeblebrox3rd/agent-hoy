@@ -1,6 +1,7 @@
 # openai_integration.py
 # OpenAI API integration for AI analysis
 
+import base64
 import hashlib
 import json
 import os
@@ -10,6 +11,7 @@ from typing import Callable, Optional
 
 import openai
 
+from assist_mode import GUIDE_INSTRUCTIONS, GUIDE_MAX_OUTPUT_TOKENS
 from openai_config import openai_config
 
 
@@ -68,12 +70,19 @@ class OpenAIAnalyzer:
         content = f"{openai_config.model}:{prompt}:{context}"
         return hashlib.md5(content.encode()).hexdigest()
 
-    def _build_responses_kwargs(self, prompt: str, stream: bool = False) -> dict:
+    def _build_responses_kwargs(
+        self,
+        prompt: str,
+        stream: bool = False,
+        image: Optional[tuple] = None,
+        instructions: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> dict:
         kwargs = {
             "model": openai_config.model,
-            "instructions": openai_config.system_instructions,
-            "input": prompt,
-            "max_output_tokens": openai_config.max_tokens,
+            "instructions": instructions or openai_config.system_instructions,
+            "input": self._responses_input(prompt, image),
+            "max_output_tokens": max_output_tokens or openai_config.max_tokens,
             "store": False,
         }
         if stream:
@@ -90,14 +99,45 @@ class OpenAIAnalyzer:
 
         return kwargs
 
-    def _build_chat_completions_kwargs(self, prompt: str) -> dict:
+    def _responses_input(self, prompt: str, image: Optional[tuple]):
+        if not image:
+            return prompt
+        data, mime, detail = image
+        data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+        return [
+            {
+                "role": "user",
+                "content": [
+                    {"type": "input_text", "text": prompt},
+                    {"type": "input_image", "image_url": data_url, "detail": detail},
+                ],
+            }
+        ]
+
+    def _chat_user_content(self, prompt: str, image: Optional[tuple]):
+        if not image:
+            return prompt
+        data, mime, detail = image
+        data_url = "data:" + mime + ";base64," + base64.b64encode(data).decode("ascii")
+        return [
+            {"type": "text", "text": prompt},
+            {"type": "image_url", "image_url": {"url": data_url, "detail": detail}},
+        ]
+
+    def _build_chat_completions_kwargs(
+        self,
+        prompt: str,
+        image: Optional[tuple] = None,
+        instructions: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> dict:
         kwargs = {
             "model": openai_config.model,
             "messages": [
-                {"role": "system", "content": openai_config.system_instructions},
-                {"role": "user", "content": prompt},
+                {"role": "system", "content": instructions or openai_config.system_instructions},
+                {"role": "user", "content": self._chat_user_content(prompt, image)},
             ],
-            "max_tokens": openai_config.max_tokens,
+            "max_tokens": max_output_tokens or openai_config.max_tokens,
         }
 
         if openai_config.is_current_model_reasoning():
@@ -273,6 +313,47 @@ class OpenAIAnalyzer:
 
         return self._make_api_call(prompt, f"troubleshooting:{question[:50]}", stream_callback)
 
+    def generate_screen_guide(
+        self,
+        transcript: str,
+        capture_note: str,
+        image: Optional[tuple] = None,
+        stream_callback: Optional[Callable[[str], None]] = None,
+    ) -> tuple[str, float]:
+        """One spoken walkthrough step. image is (bytes, mime, detail) or None."""
+        if not self.is_available():
+            return "OpenAI is not configured. Voice and vision need an API key.", 0.0
+
+        prompt = (
+            "What the user just said:\n"
+            f"{transcript}\n\n"
+            f"Capture: {capture_note}\n"
+        )
+        text, cost = self._make_api_call(
+            prompt,
+            "guide",
+            stream_callback,
+            image=image,
+            instructions=GUIDE_INSTRUCTIONS,
+            max_output_tokens=GUIDE_MAX_OUTPUT_TOKENS,
+            use_cache=False,
+            use_fallback=False,
+        )
+        if image and text.startswith("OpenAI API error:") and _image_request_rejected(text):
+            print(f"Vision request rejected, retrying once: {text}")
+            retry_image = _retry_image(image, text)
+            text, cost = self._make_api_call(
+                prompt,
+                "guide-retry",
+                stream_callback,
+                image=retry_image,
+                instructions=GUIDE_INSTRUCTIONS,
+                max_output_tokens=GUIDE_MAX_OUTPUT_TOKENS,
+                use_cache=False,
+                use_fallback=False,
+            )
+        return text, cost
+
     def _extract_response_text(self, response) -> str:
         if hasattr(response, "output_text") and response.output_text:
             return response.output_text
@@ -289,12 +370,21 @@ class OpenAIAnalyzer:
         self,
         prompt: str,
         stream_callback: Optional[Callable[[str], None]],
+        image: Optional[tuple] = None,
+        instructions: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> tuple[str, float, int]:
         use_stream = openai_config.stream_responses and stream_callback is not None
 
         if use_stream:
             stream = self.client.responses.create(
-                **self._build_responses_kwargs(prompt, stream=True),
+                **self._build_responses_kwargs(
+                    prompt,
+                    stream=True,
+                    image=image,
+                    instructions=instructions,
+                    max_output_tokens=max_output_tokens,
+                ),
             )
 
             ai_response = ""
@@ -319,7 +409,13 @@ class OpenAIAnalyzer:
             return ai_response, 0.0, estimated_tokens
 
         response = self.client.responses.create(
-            **self._build_responses_kwargs(prompt, stream=False),
+            **self._build_responses_kwargs(
+                prompt,
+                stream=False,
+                image=image,
+                instructions=instructions,
+                max_output_tokens=max_output_tokens,
+            ),
         )
 
         ai_response = self._extract_response_text(response)
@@ -327,9 +423,20 @@ class OpenAIAnalyzer:
         cost = self._calculate_cost(usage.input_tokens, usage.output_tokens)
         return ai_response, cost, usage.total_tokens
 
-    def _make_chat_completions_call(self, prompt: str) -> tuple[str, float, int]:
+    def _make_chat_completions_call(
+        self,
+        prompt: str,
+        image: Optional[tuple] = None,
+        instructions: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+    ) -> tuple[str, float, int]:
         response = self.client.chat.completions.create(
-            **self._build_chat_completions_kwargs(prompt),
+            **self._build_chat_completions_kwargs(
+                prompt,
+                image=image,
+                instructions=instructions,
+                max_output_tokens=max_output_tokens,
+            ),
         )
 
         ai_response = response.choices[0].message.content or ""
@@ -342,29 +449,48 @@ class OpenAIAnalyzer:
         prompt: str,
         context: str,
         stream_callback: Optional[Callable[[str], None]] = None,
+        image: Optional[tuple] = None,
+        instructions: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
+        use_cache: bool = True,
+        use_fallback: bool = True,
     ) -> tuple[str, float]:
+        if image is not None:
+            use_cache = False
+
         if not self._check_rate_limits(estimated_tokens=openai_config.max_tokens):
             return "Rate limit exceeded. Please wait before making more requests.", 0.0
 
         cache_key = self._get_cache_key(prompt, context)
-        cached_response = self._get_cached_response(cache_key)
-        if cached_response:
-            if stream_callback:
-                stream_callback(cached_response)
-            return cached_response, 0.0
+        if use_cache:
+            cached_response = self._get_cached_response(cache_key)
+            if cached_response:
+                if stream_callback:
+                    stream_callback(cached_response)
+                return cached_response, 0.0
 
         try:
             if openai_config.use_responses_api:
                 ai_response, cost, total_tokens = self._make_responses_api_call(
-                    prompt, stream_callback
+                    prompt,
+                    stream_callback,
+                    image=image,
+                    instructions=instructions,
+                    max_output_tokens=max_output_tokens,
                 )
             else:
-                ai_response, cost, total_tokens = self._make_chat_completions_call(prompt)
+                ai_response, cost, total_tokens = self._make_chat_completions_call(
+                    prompt,
+                    image=image,
+                    instructions=instructions,
+                    max_output_tokens=max_output_tokens,
+                )
                 if stream_callback:
                     stream_callback(ai_response)
 
             self._record_request(total_tokens)
-            self._cache_response(cache_key, ai_response)
+            if use_cache:
+                self._cache_response(cache_key, ai_response)
             return ai_response, cost
 
         except Exception as e:
@@ -375,7 +501,7 @@ class OpenAIAnalyzer:
                     "Hint: GPT-5 reasoning models do not support temperature; "
                     "use OPENAI_REASONING_EFFORT and OPENAI_TEXT_VERBOSITY instead."
                 )
-            if openai_config.use_fallback_on_error:
+            if use_fallback and openai_config.use_fallback_on_error:
                 return self._get_fallback_response(prompt, context), 0.0
             return f"OpenAI API error: {str(e)}", 0.0
 
@@ -448,6 +574,33 @@ AI Recommendation: Consider implementing automated testing and monitoring to pre
 
     def _get_fallback_troubleshooting_analysis(self, question: str, suggestions: dict) -> str:
         return self._get_template_response("troubleshooting")
+
+
+def _image_request_rejected(message: str) -> bool:
+    lowered = message.lower()
+    markers = (
+        "image",
+        "dimension",
+        "pixel",
+        "payload",
+        "too large",
+        "maximum",
+        "detail",
+        "unsupported",
+    )
+    return any(marker in lowered for marker in markers)
+
+
+def _retry_image(image: tuple, message: str) -> tuple:
+    """One smaller or lower-detail retry after the API rejects the first image."""
+    data, mime, detail = image
+    lowered = message.lower()
+    if "detail" in lowered or "original" in lowered:
+        return data, mime, "high"
+    from image_payload import shrink_to_long_side
+
+    shrunk = shrink_to_long_side(data, 2048, openai_config.model)
+    return shrunk.data, shrunk.mime, shrunk.detail
 
 
 openai_analyzer = OpenAIAnalyzer()
