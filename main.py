@@ -43,6 +43,11 @@ from config_loader import (
     load_topic_explanations,
     load_transcription_corrections,
 )
+from ui_prefs import (
+    TOOLBAR_COLLAPSE_ENABLED,
+    load_toolbar_collapsed,
+    save_toolbar_collapsed,
+)
 from transcription_config import (
     AI_ANALYSIS_THROTTLE_SECONDS,
     HIGHLIGHT_DEBOUNCE_MS,
@@ -214,47 +219,84 @@ class SpeechTranscriptionApp:
         main_frame.columnconfigure(1, weight=1)
         main_frame.rowconfigure(1, weight=1)
         
-        # Control panel - organized in two rows
-        control_frame = ttk.Frame(main_frame)
-        control_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
-        
+        # Control panel - collapsible body with a thin always-visible chrome strip
+        self.control_frame = ttk.Frame(main_frame)
+        self.control_frame.grid(row=0, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
+
+        self.toolbar_collapsed = (
+            load_toolbar_collapsed() if TOOLBAR_COLLAPSE_ENABLED else False
+        )
+        self.toolbar_chrome = ttk.Frame(self.control_frame)
+
+        # Compact controls shown only while the full toolbar is collapsed.
+        self.collapsed_controls = ttk.Frame(self.toolbar_chrome)
+        self.collapsed_listen_button = ttk.Button(
+            self.collapsed_controls,
+            text="Start Listening",
+            command=self.toggle_listening,
+        )
+        self.collapsed_listen_button.pack(side=tk.LEFT, padx=(0, 8))
+        self.collapsed_pause_button = ttk.Button(
+            self.collapsed_controls,
+            text="Pause",
+            command=self.toggle_pause,
+            state=tk.DISABLED,
+        )
+        self.collapsed_pause_button.pack(side=tk.LEFT, padx=(0, 8))
+        self.collapsed_status_label = ttk.Label(self.collapsed_controls, text="Status: Ready")
+        self.collapsed_status_label.pack(side=tk.LEFT, padx=(0, 8))
+
+        # Separate show/hide buttons because Tk cannot re-pack a child under a
+        # non-ancestor widget.
+        self.hide_toolbar_button = None
+        self.show_toolbar_button = None
+        if TOOLBAR_COLLAPSE_ENABLED:
+            self.show_toolbar_button = ttk.Button(
+                self.toolbar_chrome,
+                text="Show Toolbar",
+                command=self.toggle_toolbar,
+                width=14,
+            )
+
+        self.toolbar_body = ttk.Frame(self.control_frame)
+
         # First row - Action buttons and font controls
-        top_row = ttk.Frame(control_frame)
-        top_row.pack(fill=tk.X, pady=(0, 5))
-        
-        self.listen_button = ttk.Button(top_row, text="Start Listening", 
+        self.top_row = ttk.Frame(self.toolbar_body)
+        self.top_row.pack(fill=tk.X, pady=(0, 5))
+
+        self.listen_button = ttk.Button(self.top_row, text="Start Listening",
                                       command=self.toggle_listening)
         self.listen_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.pause_button = ttk.Button(top_row, text="Pause Listening", 
+
+        self.pause_button = ttk.Button(self.top_row, text="Pause Listening",
                                      command=self.toggle_pause, state=tk.DISABLED)
         self.pause_button.pack(side=tk.LEFT, padx=(0, 10))
-        
-        self.clear_button = ttk.Button(top_row, text="Clear Text", 
+
+        self.clear_button = ttk.Button(self.top_row, text="Clear Text",
                                      command=self.clear_transcription)
         self.clear_button.pack(side=tk.LEFT, padx=(0, 10))
-        
+
         # Cost reset button
-        self.cost_reset_button = ttk.Button(top_row, text="Reset Cost", 
+        self.cost_reset_button = ttk.Button(self.top_row, text="Reset Cost",
                                            command=self.reset_session_cost)
         self.cost_reset_button.pack(side=tk.LEFT, padx=(0, 10))
-        
+
         # Font size controls
-        font_frame = ttk.Frame(top_row)
+        font_frame = ttk.Frame(self.top_row)
         font_frame.pack(side=tk.LEFT, padx=(20, 0))
-        
+
         ttk.Label(font_frame, text="Font Size:").pack(side=tk.LEFT)
-        
-        self.decrease_font_button = ttk.Button(font_frame, text="A-", 
+
+        self.decrease_font_button = ttk.Button(font_frame, text="A-",
                                              command=self.decrease_font_size, width=3)
         self.decrease_font_button.pack(side=tk.LEFT, padx=(5, 2))
-        
-        self.increase_font_button = ttk.Button(font_frame, text="A+", 
+
+        self.increase_font_button = ttk.Button(font_frame, text="A+",
                                              command=self.increase_font_size, width=3)
         self.increase_font_button.pack(side=tk.LEFT, padx=(2, 0))
 
         # OpenAI model selector
-        model_frame = ttk.Frame(top_row)
+        model_frame = ttk.Frame(self.top_row)
         model_frame.pack(side=tk.LEFT, padx=(20, 0))
 
         ttk.Label(model_frame, text="Model:").pack(side=tk.LEFT)
@@ -277,7 +319,7 @@ class SpeechTranscriptionApp:
         self.effort_value_label = None
         self._effort_updating = False
         if SHOW_EFFORT_SLIDER:
-            self.effort_frame = ttk.Frame(top_row)
+            self.effort_frame = ttk.Frame(self.top_row)
             self.effort_frame.pack(side=tk.LEFT, padx=(16, 0))
 
             ttk.Label(self.effort_frame, text="Effort:").pack(side=tk.LEFT)
@@ -302,29 +344,38 @@ class SpeechTranscriptionApp:
             self.effort_value_label.pack(side=tk.LEFT)
             self._sync_effort_slider_state()
 
+        if TOOLBAR_COLLAPSE_ENABLED:
+            self.hide_toolbar_button = ttk.Button(
+                self.top_row,
+                text="Hide Toolbar",
+                command=self.toggle_toolbar,
+                width=14,
+            )
+
         settings = load_assist_settings()
         self.transcription_assist = tk.BooleanVar(value=settings.transcription)
         self.voice_assist = tk.BooleanVar(value=settings.voice)
         self.vision_mode = tk.StringVar(value=settings.vision)
+        self.mode_row = None
         if ASSIST_MODES_ENABLED:
-            mode_row = ttk.Frame(control_frame)
-            mode_row.pack(fill=tk.X, pady=(0, 5))
+            self.mode_row = ttk.Frame(self.toolbar_body)
+            self.mode_row.pack(fill=tk.X, pady=(0, 5))
             ttk.Checkbutton(
-                mode_row,
+                self.mode_row,
                 text="Transcription",
                 variable=self.transcription_assist,
                 command=self.on_assist_changed,
             ).pack(side=tk.LEFT, padx=(0, 12))
             ttk.Checkbutton(
-                mode_row,
+                self.mode_row,
                 text="Voice",
                 variable=self.voice_assist,
                 command=self.on_assist_changed,
             ).pack(side=tk.LEFT, padx=(0, 16))
-            ttk.Label(mode_row, text="Vision:").pack(side=tk.LEFT, padx=(0, 8))
+            ttk.Label(self.mode_row, text="Vision:").pack(side=tk.LEFT, padx=(0, 8))
             for vision_value, vision_label in VISION_CHOICES:
                 ttk.Radiobutton(
-                    mode_row,
+                    self.mode_row,
                     text=vision_label,
                     value=vision_value,
                     variable=self.vision_mode,
@@ -332,49 +383,51 @@ class SpeechTranscriptionApp:
                 ).pack(side=tk.LEFT, padx=(0, 12))
 
         # Second row - Status labels and settings
-        bottom_row = ttk.Frame(control_frame)
+        bottom_row = ttk.Frame(self.toolbar_body)
         bottom_row.pack(fill=tk.X)
-        
+
         self.status_label = ttk.Label(bottom_row, text="Status: Ready")
         self.status_label.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # Audio status display
         self.audio_status_label = ttk.Label(bottom_row, text="Audio Status: Default Microphone")
         self.audio_status_label.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # AI toggle checkbox
         self.ai_enabled_var = tk.BooleanVar(value=True)
         self.ai_checkbox = ttk.Checkbutton(
-            bottom_row, 
-            text="Enable AI Analysis", 
+            bottom_row,
+            text="Enable AI Analysis",
             variable=self.ai_enabled_var,
             command=self.on_ai_toggle
         )
         self.ai_checkbox.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # OpenAI status indicator
         self.openai_status_label = ttk.Label(bottom_row, text=self._openai_status_text())
         self.openai_status_label.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # Cost tracking
         self.session_cost = 0.0
         self.cost_label = ttk.Label(bottom_row, text="Session Cost: $0.00")
         self.cost_label.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # API call tracking
         self.api_call_count = 0
         self.api_counter_label = ttk.Label(bottom_row, text="API Calls: 0")
         self.api_counter_label.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # AI analysis status indicator
         self.ai_status_label = ttk.Label(bottom_row, text="AI Status: Ready")
         self.ai_status_label.pack(side=tk.LEFT, padx=(0, 20))
-        
+
         # Question type indicator
-        self.question_type_label = ttk.Label(bottom_row, text="Type: None", 
+        self.question_type_label = ttk.Label(bottom_row, text="Type: None",
                                            font=("Arial", 9), foreground="green")
         self.question_type_label.pack(side=tk.LEFT, padx=(0, 0))
-        
+
+        self._apply_toolbar_collapsed(self.toolbar_collapsed, persist=False)
+
         # Create resizable paned window for transcription and topic areas
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
         self.paned_window.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
@@ -547,11 +600,12 @@ class SpeechTranscriptionApp:
         self.listen_button.config(text="Stop Listening")
         self.pause_button.config(text="Pause Listening", state=tk.NORMAL)
         self.status_label.config(text="Status: Listening...")
-        
+        self._sync_collapsed_toolbar_controls()
+
         # Start background thread for speech recognition
         self.listen_thread = threading.Thread(target=self.listen_continuously, daemon=True)
         self.listen_thread.start()
-    
+
     def stop_listening(self):
         """Stop the speech recognition"""
         self._speech_generation += 1
@@ -562,6 +616,7 @@ class SpeechTranscriptionApp:
         self.listen_button.config(text="Start Listening")
         self.pause_button.config(text="Pause Listening", state=tk.DISABLED)
         self.status_label.config(text="Status: Stopped")
+        self._sync_collapsed_toolbar_controls()
         print("Stopped listening for speech")
     
     def _make_ai_stream_callback(self, source="analysis"):
@@ -583,8 +638,9 @@ class SpeechTranscriptionApp:
             self.recognition_generation += 1
             self.pause_button.config(text="Resume Listening")
             self.status_label.config(text="Status: Paused (AI analysis continues)")
+            self._sync_collapsed_toolbar_controls()
             print("Paused listening - discarding in-flight speech recognition")
-    
+
     def resume_listening(self):
         """Resume listening after pause."""
         if self.is_listening and self.is_paused:
@@ -592,6 +648,7 @@ class SpeechTranscriptionApp:
             self.recognition_generation += 1
             self.pause_button.config(text="Pause Listening")
             self.status_label.config(text="Status: Listening...")
+            self._sync_collapsed_toolbar_controls()
             print("Resumed listening...")
     
     def listen_continuously(self):
@@ -1178,6 +1235,52 @@ class SpeechTranscriptionApp:
         except Exception as e:
             print(f"Error restoring pane positions: {e}")
     
+    def toggle_toolbar(self):
+        """Collapse or expand the full control toolbar."""
+        if not TOOLBAR_COLLAPSE_ENABLED:
+            return
+        self._apply_toolbar_collapsed(not self.toolbar_collapsed, persist=True)
+
+    def _apply_toolbar_collapsed(self, collapsed: bool, persist: bool = True) -> None:
+        """Show or hide the toolbar body; keep a thin chrome strip when collapsed."""
+        self.toolbar_collapsed = bool(collapsed)
+
+        if self.hide_toolbar_button is not None:
+            self.hide_toolbar_button.pack_forget()
+        if self.show_toolbar_button is not None:
+            self.show_toolbar_button.pack_forget()
+
+        if self.toolbar_collapsed:
+            self.toolbar_body.pack_forget()
+            self.toolbar_chrome.pack(fill=tk.X)
+            self.collapsed_controls.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            if self.show_toolbar_button is not None:
+                self.show_toolbar_button.pack(side=tk.RIGHT)
+        else:
+            self.collapsed_controls.pack_forget()
+            self.toolbar_chrome.pack_forget()
+            self.toolbar_body.pack(fill=tk.X)
+            if self.hide_toolbar_button is not None:
+                self.hide_toolbar_button.pack(side=tk.RIGHT)
+
+        self._sync_collapsed_toolbar_controls()
+        if persist and TOOLBAR_COLLAPSE_ENABLED:
+            save_toolbar_collapsed(self.toolbar_collapsed)
+
+    def _sync_collapsed_toolbar_controls(self) -> None:
+        """Keep compact collapsed-bar controls aligned with the full toolbar."""
+        if not hasattr(self, "collapsed_listen_button"):
+            return
+        try:
+            self.collapsed_listen_button.config(text=self.listen_button.cget("text"))
+            self.collapsed_pause_button.config(
+                text="Pause" if self.pause_button.cget("text") == "Pause Listening" else "Resume",
+                state=self.pause_button.cget("state"),
+            )
+            self.collapsed_status_label.config(text=self.status_label.cget("text"))
+        except tk.TclError:
+            pass
+
     def _openai_status_text(self) -> str:
         if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
             if openai_config.is_current_model_reasoning():
@@ -1494,6 +1597,7 @@ class SpeechTranscriptionApp:
         self.status_label.config(text="Status: Speaking...")
         if self.is_listening:
             self.pause_button.config(text="Pause Listening", state=tk.DISABLED)
+        self._sync_collapsed_toolbar_controls()
 
     def _show_listening_status(self):
         if not self.is_listening:
@@ -1504,6 +1608,7 @@ class SpeechTranscriptionApp:
         else:
             self.pause_button.config(text="Pause Listening", state=tk.NORMAL)
             self.status_label.config(text="Status: Listening...")
+        self._sync_collapsed_toolbar_controls()
     
     def show_ai_analysis(self, content, speak=False, source="analysis"):
         """Display AI-driven analysis in the AI pane.
