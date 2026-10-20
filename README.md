@@ -9,7 +9,7 @@ A Python application that provides real-time speech transcription with interacti
 - **Topic Explanations**: Get summaries, technical challenges, and command examples for various tech topics
 - **Modern GUI**: Clean, responsive interface built with tkinter
 - **AI-Enhanced Analysis**: OpenAI integration with Responses API, streaming, and adaptive question types
-- Assist modes, chosen with radio buttons: Transcription, Voice, Window, and Screen
+- Assist controls: Transcription and Voice checkboxes, plus Vision of Off, Window, or Screen
 - **Two install profiles**: Lite (small, online STT) and Full (offline Whisper)
 
 ## Installation
@@ -99,15 +99,15 @@ run.bat          # Windows
 
 Set `OPENAI_API_KEY` for AI analysis. See [OPENAI_SETUP.md](OPENAI_SETUP.md) for model and API options.
 
-## Assist modes
+## Assist controls
 
-The Assist radios sit under the main buttons. Transcription is the default and keeps the existing keyword analysis.
+Transcription, Voice, and Vision can be used together. The live transcript is always written while listening. The Transcription checkbox is the previous keyword and question analysis. Voice speaks the short guide. Vision is Off, Window, or Screen, because one share source is active at a time. Window attaches the foreground window, or the last window that was in front of this app. Screen attaches the display under the pointer.
 
-Voice speaks the reply and pauses the microphone while the audio plays. Window attaches the foreground window, or the last window that was in front of this app. Screen attaches the display under the pointer. Screenshots are sent at the captured resolution. The image is shrunk only when the API would reject it, or when the file is still too large after a high-quality JPEG at the same pixel size.
+Screenshots are sent at the captured resolution. The image is shrunk only when the API would reject it, or when the file is still too large after a high-quality JPEG at the same pixel size. Voice pauses the microphone while the audio plays.
 
-On Linux with Wayland, capture goes through the desktop screenshot portal. Window mode asks that portal which window to share. macOS needs Screen Recording permission for the terminal that launched the app.
+On Linux with Wayland, capture goes through the desktop screenshot portal. Window asks that portal which window to share. macOS needs Screen Recording permission for the terminal that launched the app.
 
-Rollback: set `ASSIST_MODES_ENABLED` to `False` in `assist_mode.py`. The radios disappear and the app stays in transcription mode.
+Rollback: set `ASSIST_MODES_ENABLED` to `False` in `assist_mode.py`. The controls disappear and the app stays in transcription mode.
 
 Important: `uv sync` without `--extra whisper` installs the Lite profile and removes Whisper. After `setup_uv.bat --full`, use `run.bat` or always sync with `--extra whisper`.
 
@@ -163,8 +163,8 @@ After setup on each platform:
 - [ ] Lite: Google STT transcribes (FLAC + network required)
 - [ ] Full: Whisper transcribes offline
 - [ ] AI analysis updates when keywords are spoken (with API key)
-- [ ] Assist radios switch among Transcription, Voice, Window, and Screen
-- [ ] Window or Screen mode keeps a native-resolution screenshot in the request
+- [ ] Transcription, Voice, and Vision can be enabled together
+- [ ] Window or Screen keeps a native-resolution screenshot in the request
 
 ## License
 

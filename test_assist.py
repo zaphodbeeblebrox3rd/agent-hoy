@@ -6,16 +6,14 @@ import sys
 
 from assist_mode import (
     ASSIST_MODES_ENABLED,
-    DEFAULT_ASSIST_MODE,
-    MODE_SCREEN,
-    MODE_TRANSCRIPTION,
-    MODE_VOICE,
-    MODE_WINDOW,
+    VISION_OFF,
+    VISION_SCREEN,
+    VISION_WINDOW,
+    AssistSettings,
     captures,
     guide_active,
-    load_assist_mode,
-    normalize_assist_mode,
-    save_assist_mode,
+    load_assist_settings,
+    save_assist_settings,
     speaks,
 )
 from image_payload import (
@@ -32,25 +30,31 @@ from voice_output import text_for_speech
 
 def test_rollback_defaults():
     assert ASSIST_MODES_ENABLED is True
-    assert DEFAULT_ASSIST_MODE == MODE_TRANSCRIPTION
-    assert speaks(MODE_TRANSCRIPTION) is False
-    assert speaks(MODE_VOICE) is True
-    assert speaks(MODE_WINDOW) is True
-    assert captures(MODE_VOICE) is False
-    assert captures(MODE_WINDOW) is True
-    assert captures(MODE_SCREEN) is True
-    assert guide_active(MODE_VOICE) is True
-    assert guide_active(MODE_TRANSCRIPTION) is False
-    assert normalize_assist_mode("nope") == MODE_TRANSCRIPTION
+    defaults = AssistSettings()
+    assert defaults.transcription is True
+    assert defaults.voice is False
+    assert defaults.vision == VISION_OFF
+    assert speaks(defaults) is False
+    assert captures(defaults) is False
+    assert guide_active(defaults) is False
+    combined = AssistSettings(True, True, VISION_SCREEN)
+    assert speaks(combined) is True
+    assert captures(combined) is True
+    assert guide_active(combined) is True
+    assert captures(AssistSettings(True, True, VISION_WINDOW)) is True
+    assert guide_active(AssistSettings(False, True, VISION_OFF)) is True
     print("OK assist mode defaults")
     return True
 
 
 def test_persist_assist_mode(tmp_dir: str):
-    save_assist_mode(MODE_WINDOW, tmp_dir)
-    assert load_assist_mode(tmp_dir) == MODE_WINDOW
-    save_assist_mode("not-a-mode", tmp_dir)
-    assert load_assist_mode(tmp_dir) == MODE_TRANSCRIPTION
+    save_assist_settings(AssistSettings(True, True, VISION_SCREEN), tmp_dir)
+    loaded = load_assist_settings(tmp_dir)
+    assert loaded == AssistSettings(True, True, VISION_SCREEN)
+    with open(os.path.join(tmp_dir, "assist_mode.conf"), "w", encoding="utf-8") as handle:
+        handle.write("mode = window\n")
+    legacy = load_assist_settings(tmp_dir)
+    assert legacy == AssistSettings(False, True, VISION_WINDOW)
     print("OK assist mode persistence")
     return True
 
