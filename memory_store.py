@@ -56,28 +56,60 @@ def remember(lines: list[str], directory: str = MEMORY_DIR) -> None:
             handle.write(f"- {line}\n")
 
 
-def split_guide_reply(text: str) -> tuple[str, list[str], list[tuple[str, str]]]:
-    """Separate the spoken reply from MEMORY and ACTIONS blocks.
+def split_guide_reply(
+    text: str,
+) -> tuple[str, list[str], list[tuple[str, str]], list[tuple[str, str]]]:
+    """Separate the spoken reply from MEMORY, ACTIONS, and FILE blocks.
 
     Those blocks are saved or run later. They are not shown or spoken.
     """
+    from file_exchange import MAX_OUTPUT_FILES
+
     spoken_lines = []
     memory = []
     actions = []
+    files = []
+    file_name = ""
+    file_lines = []
     mode = "spoken"
+
+    def close_file():
+        nonlocal file_name
+        if file_name and len(files) < MAX_OUTPUT_FILES:
+            body = "\n".join(file_lines).strip("\n")
+            if body:
+                files.append((file_name, body))
+        file_name = ""
+        file_lines.clear()
+
     for line in (text or "").splitlines():
         raw = line.strip()
         if raw.startswith("```"):
             continue
         marker = raw.upper()
+        if marker == "MEMORY:" or marker == "ACTIONS:" or marker == "ENDFILE" or marker.startswith("FILE:"):
+            if mode == "file":
+                close_file()
         if marker == "MEMORY:":
             mode = "memory"
             continue
         if marker == "ACTIONS:":
             mode = "actions"
             continue
+        if marker == "ENDFILE":
+            mode = "spoken"
+            continue
+        if marker.startswith("FILE:"):
+            name = raw.split(":", 1)[1].strip()
+            if name:
+                file_name = name
+                mode = "file"
+            continue
         if mode == "spoken":
             spoken_lines.append(line)
+            continue
+        if mode == "file":
+            file_lines.append(line)
             continue
         if not raw:
             continue
@@ -93,13 +125,15 @@ def split_guide_reply(text: str) -> tuple[str, list[str], list[tuple[str, str]]]
         action = _parse_action(raw)
         if action and len(actions) < MAX_ACTIONS:
             actions.append(action)
+    if mode == "file":
+        close_file()
     spoken = "\n".join(spoken_lines).strip()
-    return spoken, memory, actions
+    return spoken, memory, actions, files
 
 
 def visible_reply(text: str) -> str:
-    """Reply text with memory and browser actions removed."""
-    spoken, _memory, _actions = split_guide_reply(text)
+    """Reply text with memory, browser actions, and file bodies removed."""
+    spoken, _memory, _actions, _files = split_guide_reply(text)
     return spoken
 
 
@@ -108,7 +142,7 @@ def _clean_fact(line: str) -> str:
     if cleaned[:1] in "-*":
         cleaned = cleaned[1:].strip()
     cleaned = " ".join(cleaned.split())
-    if not cleaned or cleaned.upper() in ("MEMORY:", "ACTIONS:"):
+    if not cleaned or cleaned.upper() in ("MEMORY:", "ACTIONS:", "ENDFILE") or cleaned.upper().startswith("FILE:"):
         return ""
     return cleaned[:MAX_MEMORY_LINE_CHARS]
 

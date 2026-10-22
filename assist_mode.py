@@ -7,6 +7,8 @@ import os
 from dataclasses import dataclass
 
 ASSIST_MODES_ENABLED = True
+# Rollback: set False to stop telling the guide how Live scroll already works.
+DESCRIBE_APP_CONTROLS = True
 
 VISION_OFF = "off"
 VISION_WINDOW = "window"
@@ -23,12 +25,12 @@ DEFAULT_VOICE = False
 DEFAULT_VISION = VISION_OFF
 DEFAULT_BROWSER_CONTROL = False
 
-GUIDE_MAX_OUTPUT_TOKENS = 800
+GUIDE_MAX_OUTPUT_TOKENS = 2000
 GUIDE_TRANSCRIPT_CHARS = 2000
 DIALOGUE_TURNS = 6
 
 
-def guide_instructions(browser_control: bool = False, memory: bool = True) -> str:
+def guide_instructions(browser_control: bool = False, memory: bool = True, files: bool = True) -> str:
     """Spoken guide. You means the assistant. IT help is available, not assumed."""
     text = (
         "You are the assistant speaking with the person at this computer. "
@@ -39,6 +41,13 @@ def guide_instructions(browser_control: bool = False, memory: bool = True) -> st
         "Use the recent conversation, what you remember, and the page or screenshot when those are present. "
         "If a screenshot or page is missing, say so in one sentence and answer from their words."
     )
+    if DESCRIBE_APP_CONTROLS:
+        text += (
+            " This window already keeps older text and follows the newest line when Live scroll is checked. "
+            "Unchecking Live scroll leaves the view where it is while new text is still added. "
+            "When they ask how to use this window, answer from the controls you can see. "
+            "Do not propose a new layout for something a visible control already does."
+        )
     if memory:
         text += (
             " If you learn a durable fact about this person or how they like to work, end with a MEMORY: section. "
@@ -55,6 +64,14 @@ def guide_instructions(browser_control: bool = False, memory: bool = True) -> st
         )
     else:
         text += " You cannot click, type, or move the pointer. Tell them what you see and what they can do."
+    if files:
+        text += (
+            " Attached files are context. Use them when they are present. "
+            "When the user asks you to create, save, or download a file, say the file name in the reply "
+            "and end with a FILE: block. The first line is FILE: followed by the file name, then the file body, "
+            "then a line that is exactly ENDFILE. Do not read the file body aloud. "
+            "Do not write a FILE: block unless they asked for a file."
+        )
     return text
 
 
@@ -67,14 +84,17 @@ def build_guide_prompt(
     history: str = "",
     memory: str = "",
     page_text: str = "",
+    attached: str = "",
 ) -> str:
-    """New utterance plus recent turns, memory, and the full page when we have it."""
+    """New utterance plus recent turns, memory, attached files, and the page."""
     parts = []
     if history.strip():
         parts.append("Recent conversation:\n" + history.strip())
     parts.append("What the user just said:\n" + (transcript or "").strip())
     if memory.strip():
         parts.append("What you remember:\n" + memory.strip())
+    if attached.strip():
+        parts.append("Attached files:\n" + attached.strip())
     if page_text.strip():
         parts.append("Full page text:\n" + page_text.strip())
     parts.append("Capture:\n" + (capture_note or "").strip())

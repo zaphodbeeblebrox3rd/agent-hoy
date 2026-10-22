@@ -187,9 +187,23 @@ def test_live_screen_is_native():
 
 
 def test_analysis_history_continues_only_the_same_reply():
-    from main import analysis_continues
+    from main import analysis_continues, is_direct_howto
 
     assert analysis_continues("Hello", "Hello there") is True
+    assert is_direct_howto("How do I check whether a Linux disk is full?") is True
+    assert is_direct_howto("How do I fix this error?") is False
+    from main import is_direct_explanation
+
+    assert is_direct_explanation("What does a non-zero exit code mean in a shell script?") is True
+    assert is_direct_explanation("Why would a Kubernetes pod stay in Pending?") is True
+    from main import keyboard_entry_allowed
+
+    assert keyboard_entry_allowed(True, True, False, False) is False
+    assert keyboard_entry_allowed(True, True, True, False) is True
+    assert keyboard_entry_allowed(True, True, True, True) is False
+    assert keyboard_entry_allowed(True, False, False, False) is True
+    assert keyboard_entry_allowed(False, True, False, False) is True
+    assert is_direct_explanation("How do I fix this error?") is False
     spoken = "Hello there, this is the spoken reply that should stay in the pane."
     assert analysis_continues(spoken + "\nMEMORY:\n- Uses Edge", spoken) is True
     assert analysis_continues(
@@ -198,6 +212,49 @@ def test_analysis_history_continues_only_the_same_reply():
     ) is False
     assert analysis_continues("Hello there", "He") is False
     print("OK analysis history keeps a new reply")
+    return True
+
+
+def test_file_context_and_output(tmp_dir: str):
+    from file_exchange import load_context_file, safe_output_name, write_output_files
+    from memory_store import split_guide_reply
+
+    assert safe_output_name("../secret.txt") == "secret.txt"
+    assert safe_output_name("..") == ""
+    assert safe_output_name("notes.txt") == "notes.txt"
+
+    source = os.path.join(tmp_dir, "notes.txt")
+    with open(source, "w", encoding="utf-8") as handle:
+        handle.write("alpha beta")
+    loaded = load_context_file(source)
+    assert "alpha beta" in loaded
+    assert loaded.startswith("File: notes.txt")
+
+    binary = os.path.join(tmp_dir, "blob.bin")
+    with open(binary, "wb") as handle:
+        handle.write(b"\x00\x01raw")
+    assert "not included as text" in load_context_file(binary)
+
+    reply = (
+        "I saved the notes.\n"
+        "FILE: scratch.txt\n"
+        "line one\n"
+        "line two\n"
+        "ENDFILE\n"
+    )
+    spoken, _memory, _actions, produced = split_guide_reply(reply)
+    assert spoken == "I saved the notes."
+    assert "line one" not in spoken
+    assert produced == [("scratch.txt", "line one\nline two")]
+
+    output_dir = os.path.join(tmp_dir, "output")
+    written = write_output_files(produced, output_dir)
+    assert len(written) == 1
+    with open(written[0], encoding="utf-8") as handle:
+        assert handle.read() == "line one\nline two\n"
+    again = write_output_files(produced, output_dir)
+    assert os.path.basename(again[0]) == "scratch-2.txt"
+    print("OK file context and downloadable output")
     return True
 
 
@@ -218,6 +275,7 @@ def test_guide_is_a_conversation():
     quiet = guide_instructions(False, True)
     assert "you, the assistant" in quiet
     assert "not the assumed topic" in quiet
+    assert "Live scroll" in quiet
     assert "MEMORY:" in quiet
     assert "ACTIONS:" not in quiet
     assert "Give only the next step" not in quiet
@@ -256,7 +314,8 @@ def test_memory_and_action_blocks(tmp_dir: str):
         "click: Sign in\n"
         "type: hello\n"
     )
-    spoken, memories, actions = split_guide_reply(reply)
+    spoken, memories, actions, files = split_guide_reply(reply)
+    assert files == []
     assert spoken == "I can see the sign-in page."
     assert "MEMORY" not in spoken
     assert "ACTIONS" not in spoken
@@ -416,6 +475,7 @@ def main():
         test_voice_is_conversational(),
         test_guide_is_a_conversation(),
         test_memory_and_action_blocks(tmp_dir),
+        test_file_context_and_output(tmp_dir),
         test_browser_matching_and_actions(),
         test_cdp_call_roundtrip(),
         test_guide_request_keeps_full_image(),

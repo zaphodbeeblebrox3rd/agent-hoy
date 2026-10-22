@@ -1,8 +1,14 @@
 # Project-specific files
+.vscode/
 cache/
 openai_key.txt
+xai_key.txt
 # Live assistant memory
 memory/
+# Training session transcripts and screenshots
+training/
+# Files the assistant writes on request
+output/
 # Local config overrides (shipped defaults are conf/*.conf.example)
 conf/*.conf
 .install-profile

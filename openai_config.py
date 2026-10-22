@@ -7,9 +7,18 @@ from typing import Dict, List, Optional, Tuple
 CONF_DIR = "conf"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MODEL_CONFIG_FILE = "openai_model.conf"
+XAI_BASE_URL = "https://api.x.ai/v1"
+# Rollback: set False to hide Grok and keep the picker on OpenAI only.
+GROK_MODELS_ENABLED = True
+# Rollback: set False to restore the long technical-expert system prompt.
+DIRECT_ANSWERS = True
 
 # (combobox label, API model id)
-AVAILABLE_MODELS: List[Tuple[str, str]] = [
+_GROK_MODELS: List[Tuple[str, str]] = [
+    ("Grok 4.3", "grok-4.3"),
+    ("Grok 4.7", "grok-4.7"),
+]
+_OPENAI_MODELS: List[Tuple[str, str]] = [
     ("GPT-4o Mini", "gpt-4o-mini"),
     ("GPT-4o", "gpt-4o"),
     ("GPT-4.1 Nano", "gpt-4.1-nano"),
@@ -23,6 +32,9 @@ AVAILABLE_MODELS: List[Tuple[str, str]] = [
     ("GPT-5.4", "gpt-5.4"),
     ("GPT-5.5", "gpt-5.5"),
 ]
+AVAILABLE_MODELS: List[Tuple[str, str]] = (
+    list(_OPENAI_MODELS) + _GROK_MODELS if GROK_MODELS_ENABLED else list(_OPENAI_MODELS)
+)
 
 MODEL_ID_BY_LABEL = {label: model_id for label, model_id in AVAILABLE_MODELS}
 LABEL_BY_MODEL_ID = {model_id: label for label, model_id in AVAILABLE_MODELS}
@@ -33,6 +45,11 @@ def _env_bool(name: str, default: bool) -> bool:
     if value is None:
         return default
     return value.lower() in ("1", "true", "yes", "on")
+
+
+def is_grok_model(model: str) -> bool:
+    """Grok is served by the xAI API, not the OpenAI key."""
+    return (model or "").lower().startswith("grok-")
 
 
 def is_reasoning_model(model: str) -> bool:
@@ -115,10 +132,13 @@ class OpenAIConfig:
         "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
         "gpt-5.4": {"input": 2.50, "output": 15.00},
         "gpt-5.5": {"input": 5.00, "output": 30.00},
+        "grok-4.3": {"input": 1.25, "output": 2.50},
+        "grok-4.7": {"input": 2.00, "output": 6.00},
     }
 
     def __init__(self):
         self.api_key = self._get_api_key()
+        self.xai_api_key = self._get_named_key("XAI_API_KEY", "xai_key.txt")
 
         self.model = resolve_startup_model()
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
@@ -138,28 +158,42 @@ class OpenAIConfig:
         self.use_fallback_on_error = _env_bool("OPENAI_USE_FALLBACK_ON_ERROR", True)
         self.fallback_to_template = _env_bool("OPENAI_FALLBACK_TO_TEMPLATE", True)
 
-        self.system_instructions = (
-            "You are a technical expert providing detailed analysis and recommendations "
-            "for software development, system administration, and troubleshooting."
-        )
+        if DIRECT_ANSWERS:
+            self.system_instructions = (
+                "You are a direct assistant. Answer what was asked in plain language. "
+                "Do not lecture, moralize, or add a speech they did not ask for."
+            )
+        else:
+            self.system_instructions = (
+                "You are a technical expert providing detailed analysis and recommendations "
+                "for software development, system administration, and troubleshooting."
+            )
+        self.direct_answers = DIRECT_ANSWERS
 
     def _get_api_key(self) -> Optional[str]:
-        api_key = os.getenv("OPENAI_API_KEY")
-        if api_key:
-            return api_key
+        return self._get_named_key("OPENAI_API_KEY", "openai_key.txt")
 
-        config_file = os.path.join(os.path.dirname(__file__), "openai_key.txt")
+    def _get_named_key(self, env_name: str, filename: str) -> Optional[str]:
+        api_key = os.getenv(env_name)
+        if api_key and api_key.strip():
+            return api_key.strip()
+
+        config_file = os.path.join(os.path.dirname(__file__), filename)
         if os.path.exists(config_file):
             try:
-                with open(config_file, "r", encoding="utf-8") as f:
-                    return f.read().strip()
-            except OSError as e:
-                print(f"Error reading OpenAI key from config file: {e}")
+                with open(config_file, "r", encoding="utf-8") as handle:
+                    value = handle.read().strip()
+                    return value or None
+            except OSError as exc:
+                print(f"Error reading {filename}: {exc}")
 
         return None
 
     def is_configured(self) -> bool:
         return self.api_key is not None and len(self.api_key.strip()) > 0
+
+    def xai_is_configured(self) -> bool:
+        return self.xai_api_key is not None and len(self.xai_api_key.strip()) > 0
 
     def get_model(self) -> str:
         return self.model

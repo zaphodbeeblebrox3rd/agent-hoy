@@ -71,13 +71,13 @@ javascript, js, node, nodejs, npm, yarn, react, vue, angular, jquery, typescript
 ruby, rails, gem, bundle, rake, irb, erb, haml, sass, scss, coffeescript, sinatra, rack, activerecord, migration, rails controller, mvc controller, model, view, route, middleware, rspec, cucumber, capybara
 
 [shell_scripting]
-bash, zsh, shell, scripting, command line, terminal, cli, alias, function, export, source, exec, fork, pipe, redirect, stdin, stdout, stderr, environment, variable, subshell, job control, signal, trap, cron, at, systemd
+shell script, exit code, bash, zsh, shell, scripting, command line, terminal, cli, alias, function, export, source, exec, fork, pipe, redirect, stdin, stdout, stderr, environment, variable, subshell, job control, signal, trap, cron, at, systemd
 
 [lua]
 lua, luajit, coroutine, metatable, closure, upvalue, require, module, package, table, string, math, io, os, debug, lua c api, embedding, scripting language
 
 [powershell]
-powershell, ps1, cmdlet, module, pipeline, object, variable, function, script, parameter, switch, foreach, where, select, sort, group, measure, format, export, import, get, set, new, remove, invoke
+powershell, ps1, cmdlet, module, pipeline, object, variable, function, parameter, switch, foreach, where, select, sort, group, measure, format, export, import, get, set, new, remove, invoke
 
 [ipad_tablet_repair]
 ipad, tablet, android tablet, samsung tablet, galaxy tab, pixel tablet, fire tablet, lenovo tablet, screen repair, display repair, battery replacement, charging port, usb-c, lightning, touchscreen, digitizer, home button, face id, touch id, camera repair, speaker repair, water damage, cracked screen, broken screen, dead pixel, ghost touch, unresponsive touch, not charging, battery drain, overheating, boot loop, won't turn on, stuck on logo, dfu mode, recovery mode, factory reset, apple pencil, smart keyboard, magic keyboard, ipados, ios, android os, tablet repair, device repair, mobile repair

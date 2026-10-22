@@ -73,12 +73,18 @@ def test_rollback_flags():
 def test_reasoning_model_detection():
     print("\nTesting GPT-5 reasoning model detection...")
     try:
-        from openai_config import is_reasoning_model
+        from openai_config import AVAILABLE_MODELS, is_reasoning_model
 
         assert is_reasoning_model("gpt-5.4-mini") is True
         assert is_reasoning_model("gpt-5.5") is True
         assert is_reasoning_model("gpt-5-chat-latest") is False
         assert is_reasoning_model("gpt-4.1-mini") is False
+        from openai_config import is_grok_model
+
+        assert is_grok_model("grok-4.7") is True
+        assert is_grok_model("gpt-4.1-mini") is False
+        assert is_reasoning_model("grok-4.7") is False
+        assert any(model_id == "grok-4.7" for _label, model_id in AVAILABLE_MODELS)
         print("OK reasoning model detection")
         return True
     except Exception as e:

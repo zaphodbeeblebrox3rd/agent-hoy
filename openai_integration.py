@@ -12,7 +12,7 @@ from typing import Callable, Optional
 import openai
 
 from assist_mode import GUIDE_INSTRUCTIONS, GUIDE_MAX_OUTPUT_TOKENS, build_guide_prompt
-from openai_config import openai_config
+from openai_config import XAI_BASE_URL, is_grok_model, openai_config
 
 
 class OpenAIAnalyzer:
@@ -26,18 +26,42 @@ class OpenAIAnalyzer:
             "token_window_start": time.time(),
         }
 
-        if openai_config.is_configured():
-            try:
-                self.client = openai.OpenAI(api_key=openai_config.api_key)
-                print("OpenAI client initialized successfully")
-            except Exception as e:
-                print(f"Failed to initialize OpenAI client: {e}")
-                self.client = None
+        self._client_provider = None
+        if self._ensure_client():
+            print(f"{self._client_provider} client initialized successfully")
+        elif openai_config.is_configured() or openai_config.xai_is_configured():
+            print("Model client was not created for the selected model")
         else:
             print("OpenAI not configured - using template fallback")
 
     def is_available(self) -> bool:
-        return self.client is not None and openai_config.is_configured()
+        return openai_config.is_configured() or openai_config.xai_is_configured()
+
+    def _ensure_client(self) -> bool:
+        """Point the client at OpenAI or xAI for the model currently selected."""
+        provider = "xai" if is_grok_model(openai_config.model) else "openai"
+        if self.client is not None and self._client_provider == provider:
+            return True
+        self.client = None
+        self._client_provider = None
+        try:
+            if provider == "xai":
+                if not openai_config.xai_is_configured():
+                    return False
+                self.client = openai.OpenAI(
+                    api_key=openai_config.xai_api_key,
+                    base_url=XAI_BASE_URL,
+                )
+            else:
+                if not openai_config.is_configured():
+                    return False
+                self.client = openai.OpenAI(api_key=openai_config.api_key)
+        except Exception as exc:
+            print(f"Failed to initialize {provider} client: {exc}")
+            self.client = None
+            return False
+        self._client_provider = provider
+        return True
 
     def _check_rate_limits(self, estimated_tokens: int = 0) -> bool:
         now = time.time()
@@ -140,7 +164,9 @@ class OpenAIAnalyzer:
             "max_tokens": max_output_tokens or openai_config.max_tokens,
         }
 
-        if openai_config.is_current_model_reasoning():
+        if is_grok_model(openai_config.model):
+            kwargs["reasoning_effort"] = openai_config.reasoning_effort or "low"
+        elif openai_config.is_current_model_reasoning():
             kwargs["reasoning_effort"] = openai_config.reasoning_effort
             kwargs["verbosity"] = openai_config.text_verbosity
         else:
@@ -206,9 +232,48 @@ class OpenAIAnalyzer:
             f"OpenAI prompt generation - category: '{category}', question_type: '{question_type}'"
         )
 
+        context_text = str(explanation.get("context", ""))
         boot_process_info = ""
-        if "boot_process" in explanation:
+        include_boot = "boot_process" in explanation and not (
+            question_type in ("howto", "explain") and "boot" not in context_text.lower()
+        )
+        if include_boot:
             boot_process_info = f"\nBoot Process Details:\n{explanation.get('boot_process', '')}\n"
+
+        if question_type == "howto":
+            prompt = f"""
+            Answer the user's question directly.
+
+            User question:
+            {context_text}
+
+            Commands that may help:
+            {explanation.get('commands', '')}
+
+            Reply with the steps and commands that answer this question.
+            Keep it short enough to read on one screen.
+            Do not write a general essay about the topic.
+            Do not explain unrelated parts of the system.
+            """
+            self._debug(f"Using {question_type} prompt for OpenAI API call")
+            return self._make_api_call(prompt, f"topic:{category}", stream_callback)
+
+        if question_type == "explain":
+            prompt = f"""
+            Explain the user's question directly.
+
+            User question:
+            {context_text}
+
+            Notes that may help:
+            {explanation.get('commands', '')}
+
+            Use a few sentences and one short example if it helps.
+            Do not write a five-part troubleshooting guide.
+            Do not switch to a different tool or language than the one they asked about.
+            """
+            self._debug(f"Using {question_type} prompt for OpenAI API call")
+            return self._make_api_call(prompt, f"topic:{category}", stream_callback)
 
         if question_type == "architecture":
             prompt = f"""
@@ -261,6 +326,20 @@ class OpenAIAnalyzer:
             Format the response with clear security sections and actionable recommendations.
             """
         else:
+            if openai_config.direct_answers:
+                prompt = f"""
+            Answer the user's question directly.
+
+            Topic: {explanation.get('title', category)}
+            Summary: {explanation.get('summary', '')}
+            Commands: {explanation.get('commands', '')}
+            User Question: {explanation.get('context', '')}
+
+            Give the answer they asked for. Do not lecture, moralize, or pad it with a speech.
+            """
+                self._debug(f"Using {question_type} prompt for OpenAI API call")
+                return self._make_api_call(prompt, f"topic:{category}", stream_callback)
+
             prompt = f"""
             Analyze the following technical topic and provide enhanced troubleshooting insights:
 
@@ -322,6 +401,7 @@ class OpenAIAnalyzer:
         history: str = "",
         memory: str = "",
         page_text: str = "",
+        attached: str = "",
         instructions: Optional[str] = None,
     ) -> tuple[str, float]:
         """Conversational reply. image is (bytes, mime, detail) or None."""
@@ -335,6 +415,7 @@ class OpenAIAnalyzer:
             history=history,
             memory=memory,
             page_text=page_text,
+            attached=attached,
         )
         text, cost = self._make_api_call(
             prompt,
@@ -465,6 +546,14 @@ class OpenAIAnalyzer:
         if image is not None:
             use_cache = False
 
+        if not self._ensure_client():
+            if is_grok_model(openai_config.model):
+                return (
+                    "Grok needs an API key in xai_key.txt or the XAI_API_KEY environment variable.",
+                    0.0,
+                )
+            return "OpenAI is not configured. Voice and vision need an API key.", 0.0
+
         if not self._check_rate_limits(estimated_tokens=openai_config.max_tokens):
             return "Rate limit exceeded. Please wait before making more requests.", 0.0
 
@@ -477,7 +566,8 @@ class OpenAIAnalyzer:
                 return cached_response, 0.0
 
         try:
-            if openai_config.use_responses_api:
+            use_responses = openai_config.use_responses_api and not is_grok_model(openai_config.model)
+            if use_responses:
                 ai_response, cost, total_tokens = self._make_responses_api_call(
                     prompt,
                     stream_callback,

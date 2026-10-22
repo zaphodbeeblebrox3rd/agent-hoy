@@ -8,7 +8,7 @@ challenges, and command examples.
 """
 
 import tkinter as tk
-from tkinter import ttk, scrolledtext, messagebox
+from tkinter import filedialog, ttk, scrolledtext, messagebox
 import speech_recognition as sr
 import threading
 import queue
@@ -20,6 +20,7 @@ import hashlib
 from concurrent.futures import ThreadPoolExecutor
 from typing import Dict, List, Tuple, Optional
 import requests
+import shutil
 import os
 from datetime import datetime, timedelta
 
@@ -44,6 +45,13 @@ from browser_bridge import (
     browser_actions_allowed,
     look_at_browser,
     run_actions,
+)
+from file_exchange import (
+    FILE_EXCHANGE_ENABLED,
+    MAX_ATTACHED_FILES,
+    format_attached_context,
+    load_context_file,
+    write_output_files,
 )
 from memory_store import MEMORY_ENABLED, load_memory, remember, split_guide_reply, visible_reply
 from config_loader import (
@@ -72,6 +80,14 @@ from transcription_config import (
 
 # Rollback: set False to leave the reader parked instead of following new text.
 LIVE_SCROLL_DEFAULT = True
+# Rollback: set False to send how-to and definition questions through the troubleshooting essay.
+DIRECT_HOWTO_ANSWERS = True
+# Rollback: set True to paste a topic boot process into the pane for every question.
+ALWAYS_SHOW_BOOT_PROCESS = False
+# Rollback: set False to leave the training window behind whatever else is open.
+TRAINING_WINDOW_ONTOP = True
+# Rollback: set False to keep the top pane as Live Transcription without typed entry.
+USER_ENTRY_ENABLED = True
 
 
 def analysis_continues(previous: str, current: str) -> bool:
@@ -92,6 +108,55 @@ def analysis_continues(previous: str, current: str) -> bool:
     return shorter_tail
 
 
+_HOWTO_RE = re.compile(r"\b(how do i|how can i|how to|how would i)\b", re.IGNORECASE)
+_EXPLAIN_RE = re.compile(
+    r"\b(what does|what is|what are|what's the difference|what is the difference|why would|why is|why do|why does)\b",
+    re.IGNORECASE,
+)
+_FAILURE_RE = re.compile(
+    r"\b(error|fail|failed|broken|crash|crashed|hung|hanging|timeout)\b|not working|does not work|doesn't work",
+    re.IGNORECASE,
+)
+
+
+def _direct_question(text: str, pattern: re.Pattern[str]) -> bool:
+    if not DIRECT_HOWTO_ANSWERS:
+        return False
+    lowered = text or ""
+    if _FAILURE_RE.search(lowered):
+        return False
+    return pattern.search(lowered) is not None
+
+
+def is_direct_howto(text: str) -> bool:
+    """A how-to that is not reporting a failure. Those get a short answer."""
+    return _direct_question(text, _HOWTO_RE)
+
+
+def is_direct_explanation(text: str) -> bool:
+    """A definition or why question that is not reporting a failure."""
+    return _direct_question(text, _EXPLAIN_RE)
+
+
+def keyboard_entry_allowed(
+    transcription_on: bool,
+    listening: bool,
+    paused: bool,
+    speech_active: bool,
+) -> bool:
+    """Typed entry is on unless transcription is actively listening.
+
+    Speech playback pauses the mic on its own. That pause is not a typing pause.
+    """
+    if not USER_ENTRY_ENABLED:
+        return False
+    if not transcription_on:
+        return True
+    if not listening:
+        return True
+    return bool(paused and not speech_active)
+
+
 # OpenAI integration
 from image_payload import prepare_encoded
 from openai_config import (
@@ -100,7 +165,14 @@ from openai_config import (
     openai_config,
     save_persisted_model,
 )
-from screen_capture import capture_frame, foreign_window_id
+from screen_capture import capture_frame, capture_window_by_id, foreign_window_id
+from train_mode import (
+    STABLE_SECONDS,
+    evaluate_session,
+    parse_train_args,
+    render_session_report,
+    run_training,
+)
 from voice_output import play_wav_bytes, synthesize_speech
 try:
     from openai_integration import openai_analyzer
@@ -194,6 +266,10 @@ class SpeechTranscriptionApp:
         self._guide_cursor = 0
         self._dialogue = []
         self._dialogue_lock = threading.Lock()
+        self._attached_blocks = []
+        self._attached_names = []
+        self._attached_lock = threading.Lock()
+        self._output_files = []
         self._shared_window_id = None
         self._guide_exclude_id = None
         self._guide_logical_screen = None
@@ -297,6 +373,7 @@ class SpeechTranscriptionApp:
             if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available()
             else "disabled",
             width=22,
+            height=len(AVAILABLE_MODELS),
         )
         self.model_combo.pack(side=tk.LEFT, padx=(5, 0))
         self.model_combo.bind("<<ComboboxSelected>>", self.on_model_selected)
@@ -369,6 +446,29 @@ class SpeechTranscriptionApp:
             command=self.on_live_scroll_toggled,
         )
         self.live_scroll_button.pack(side=tk.LEFT, padx=(0, 20))
+
+        if FILE_EXCHANGE_ENABLED:
+            self.add_files_button = ttk.Button(
+                bottom_row,
+                text="Add files",
+                command=self.add_context_files,
+            )
+            self.add_files_button.pack(side=tk.LEFT, padx=(0, 8))
+            self.clear_files_button = ttk.Button(
+                bottom_row,
+                text="Clear files",
+                command=self.clear_context_files,
+            )
+            self.clear_files_button.pack(side=tk.LEFT, padx=(0, 8))
+            self.download_button = ttk.Button(
+                bottom_row,
+                text="Download",
+                command=self.download_output_file,
+                state=tk.DISABLED,
+            )
+            self.download_button.pack(side=tk.LEFT, padx=(0, 8))
+            self.files_label = ttk.Label(bottom_row, text="Files: none")
+            self.files_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # OpenAI status indicator
         self.openai_status_label = ttk.Label(bottom_row, text=self._openai_status_text())
@@ -397,19 +497,25 @@ class SpeechTranscriptionApp:
         self.paned_window = ttk.PanedWindow(main_frame, orient=tk.VERTICAL)
         self.paned_window.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S))
         
-        # Top pane - Transcription display
-        transcription_frame = ttk.LabelFrame(self.paned_window, text="Live Transcription", padding="5")
-        self.paned_window.add(transcription_frame, weight=1)
-        transcription_frame.columnconfigure(0, weight=1)
-        transcription_frame.rowconfigure(0, weight=1)
+        # Top pane - spoken transcript, or typed entry when the mic is not taking it
+        entry_title = "User Entry" if USER_ENTRY_ENABLED else "Live Transcription"
+        self.user_entry_frame = ttk.LabelFrame(self.paned_window, text=entry_title, padding="5")
+        self.paned_window.add(self.user_entry_frame, weight=1)
+        self.user_entry_frame.columnconfigure(0, weight=1)
+        self.user_entry_frame.rowconfigure(0, weight=1)
         
         self.transcription_text = scrolledtext.ScrolledText(
-            transcription_frame, 
+            self.user_entry_frame, 
             wrap=tk.WORD, 
             height=15,
             font=("Arial", self.current_font_size)
         )
         self.transcription_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        self._keyboard_entry_on = False
+        self._ensure_entry_mark()
+        self.transcription_text.bind("<KeyPress>", self._on_user_entry_key)
+        self.transcription_text.bind("<<Paste>>", self._on_user_entry_paste)
+        self._sync_user_entry_mode()
         
         # Bottom pane - Split into topic explanation and AI output
         bottom_frame = ttk.Frame(self.paned_window)
@@ -567,6 +673,7 @@ class SpeechTranscriptionApp:
         self.listen_button.config(text="Stop Listening")
         self.pause_button.config(text="Pause Listening", state=tk.NORMAL)
         self.status_label.config(text="Status: Listening...")
+        self._sync_user_entry_mode()
         
         # Start background thread for speech recognition
         self.listen_thread = threading.Thread(target=self.listen_continuously, daemon=True)
@@ -582,20 +689,25 @@ class SpeechTranscriptionApp:
         self.listen_button.config(text="Start Listening")
         self.pause_button.config(text="Pause Listening", state=tk.DISABLED)
         self.status_label.config(text="Status: Stopped")
+        self._sync_user_entry_mode(focus=True)
         print("Stopped listening for speech")
     
     def _make_ai_stream_callback(self, source="analysis", hide_blocks=False):
-        """Return a callback that streams partial AI text to the UI thread."""
+        """Return a callback that streams partial AI text into one pane block."""
+        block_id = f"{source}{time.time_ns()}"
+
         def callback(partial_text):
             content = visible_reply(partial_text) if hide_blocks else partial_text
             if hide_blocks and not str(content).strip():
                 return
             self.root.after(
                 0,
-                lambda content=content, section=source: self.show_ai_analysis(
-                    content, source=section
+                lambda content=content, section=source, block=block_id: self.show_ai_analysis(
+                    content, source=section, block_id=block
                 ),
             )
+
+        callback.block_id = block_id
         return callback
     
     def pause_listening(self):
@@ -606,6 +718,7 @@ class SpeechTranscriptionApp:
             self.recognition_generation += 1
             self.pause_button.config(text="Resume Listening")
             self.status_label.config(text="Status: Paused (AI analysis continues)")
+            self._sync_user_entry_mode(focus=True)
             print("Paused listening - discarding in-flight speech recognition")
     
     def resume_listening(self):
@@ -615,6 +728,7 @@ class SpeechTranscriptionApp:
             self.recognition_generation += 1
             self.pause_button.config(text="Pause Listening")
             self.status_label.config(text="Status: Listening...")
+            self._sync_user_entry_mode()
             print("Resumed listening...")
     
     def listen_continuously(self):
@@ -758,8 +872,11 @@ class SpeechTranscriptionApp:
         )
 
     def _apply_transcription_if_current(self, generation: int, text: str):
-        if self._should_apply_recognition(generation) and text.strip():
-            self.update_transcription(text)
+        if not self._should_apply_recognition(generation) or not text.strip():
+            return
+        if hasattr(self, "transcription_assist") and not self.transcription_assist.get():
+            return
+        self.update_transcription(text)
 
     def _recognize_google(self, audio) -> str:
         if not self.check_flac_availability():
@@ -832,11 +949,16 @@ class SpeechTranscriptionApp:
             )
             return True
 
-        ai_content = self.generate_contextual_ai_analysis(
+        ai_content, block_id = self.generate_contextual_ai_analysis(
             category, explanation, full_transcription, keyword
         )
-        self.root.after(0, lambda ai=ai_content: self.show_ai_analysis(ai))
-        self.root.after(0, lambda cat=category: self.show_topic_explanation(cat))
+        self.root.after(
+            0,
+            lambda ai=ai_content, block=block_id: self.show_ai_analysis(ai, block_id=block),
+        )
+        self.root.after(
+            0, lambda cat=category: self.show_topic_explanation(cat, with_ai=False)
+        )
         self.last_ai_analysis_time = time.time()
         self.last_analyzed_transcription = full_transcription
         print(f"AI analysis triggered for keyword '{keyword}' in category '{category}'")
@@ -1011,14 +1133,116 @@ class SpeechTranscriptionApp:
         self._verbose(f"Transcription correction - Original: '{text}' -> Corrected: '{corrected_text}'")
         return corrected_text
     
+    def _entry_keyboard_allowed(self) -> bool:
+        transcription_on = True
+        if hasattr(self, "transcription_assist"):
+            transcription_on = bool(self.transcription_assist.get())
+        return keyboard_entry_allowed(
+            transcription_on,
+            self.is_listening,
+            self.is_paused,
+            bool(getattr(self, "_speech_active", False)),
+        )
+
+    def _ensure_entry_mark(self):
+        if "user_entry_end" not in self.transcription_text.mark_names():
+            self.transcription_text.mark_set("user_entry_end", "end-1c")
+        # Left gravity keeps typed characters after the mark, in the draft.
+        self.transcription_text.mark_gravity("user_entry_end", tk.LEFT)
+
+    def _sync_user_entry_mode(self, focus: bool = False):
+        """Speech owns the pane while transcription is listening. Otherwise typing does."""
+        allowed = self._entry_keyboard_allowed()
+        was = bool(getattr(self, "_keyboard_entry_on", False))
+        if was and not allowed:
+            self._submit_keyboard_entry()
+        self._keyboard_entry_on = allowed
+        self._ensure_entry_mark()
+        if allowed and focus and not was:
+            self.transcription_text.focus_set()
+            self.transcription_text.mark_set(tk.INSERT, "end-1c")
+
+    def _submit_keyboard_entry(self):
+        """Send the typed draft through the same path as a spoken line."""
+        if not hasattr(self, "transcription_text"):
+            return
+        self._ensure_entry_mark()
+        raw = self.transcription_text.get("user_entry_end", "end-1c")
+        draft = raw.strip()
+        if not draft:
+            if raw:
+                self.transcription_text.delete("user_entry_end", "end-1c")
+            return
+        self.transcription_text.delete("user_entry_end", "end-1c")
+        self.update_transcription(draft)
+
+    def _draft_edit_ok(self) -> bool:
+        mark = "user_entry_end"
+        if mark not in self.transcription_text.mark_names():
+            return True
+        try:
+            if self.transcription_text.tag_ranges("sel"):
+                if self.transcription_text.compare("sel.first", "<", mark):
+                    return False
+            return bool(self.transcription_text.compare(tk.INSERT, ">=", mark))
+        except tk.TclError:
+            return True
+
+    def _move_insert_to_draft(self):
+        self._ensure_entry_mark()
+        self.transcription_text.mark_set(tk.INSERT, "end-1c")
+        try:
+            self.transcription_text.tag_remove("sel", "1.0", tk.END)
+        except tk.TclError:
+            pass
+
+    def _on_user_entry_key(self, event):
+        if not USER_ENTRY_ENABLED:
+            return None
+        shifted = bool(event.state & 0x1)
+        if event.keysym == "Return" and not shifted:
+            if self._entry_keyboard_allowed():
+                self._submit_keyboard_entry()
+            return "break"
+        if not self._entry_keyboard_allowed():
+            if event.state & 0x4 and event.keysym.lower() in ("c", "a"):
+                return None
+            if event.keysym in (
+                "Left", "Right", "Up", "Down", "Home", "End", "Prior", "Next",
+                "Shift_L", "Shift_R", "Control_L", "Control_R",
+            ):
+                return None
+            return "break"
+        if event.state & 0x4 and event.keysym.lower() == "v":
+            if not self._draft_edit_ok():
+                self._move_insert_to_draft()
+            return None
+        if event.keysym in ("BackSpace", "Delete") and not self._draft_edit_ok():
+            return "break"
+        if not self._draft_edit_ok():
+            self._move_insert_to_draft()
+        return None
+
+    def _on_user_entry_paste(self, _event):
+        if not USER_ENTRY_ENABLED:
+            return None
+        if not self._entry_keyboard_allowed():
+            return "break"
+        if not self._draft_edit_ok():
+            self._move_insert_to_draft()
+        return None
+
     def update_transcription(self, text):
         """Update the transcription display with new text"""
         # Append new text with timestamp
         timestamp = time.strftime("%H:%M:%S")
         formatted_text = f"[{timestamp}] {text}\n"
         
-        # Insert at end and scroll to bottom
-        self.transcription_text.insert(tk.END, formatted_text)
+        # Keep a typed draft after the committed transcript.
+        self._ensure_entry_mark()
+        self.transcription_text.mark_gravity("user_entry_end", tk.RIGHT)
+        self.transcription_text.insert("user_entry_end", formatted_text)
+        self.transcription_text.mark_gravity("user_entry_end", tk.LEFT)
         self._follow_live(self.transcription_text)
         
         # Check for questions and provide troubleshooting suggestions
@@ -1062,9 +1286,10 @@ class SpeechTranscriptionApp:
                 self._verbose("Question completion detected, scheduling AI analysis...")
                 settings = self._current_assist()
                 if settings.transcription:
+                    full_transcription = self.transcription_text.get("1.0", tk.END).strip()
                     threading.Thread(
                         target=self.check_and_analyze_keywords_throttled,
-                        args=("",),
+                        args=("", full_transcription),
                         daemon=True,
                     ).start()
                 if guide_active(settings):
@@ -1202,7 +1427,13 @@ class SpeechTranscriptionApp:
             print(f"Error restoring pane positions: {e}")
     
     def _openai_status_text(self) -> str:
-        if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
+        from openai_config import is_grok_model
+
+        if is_grok_model(openai_config.model):
+            if openai_config.xai_is_configured():
+                return f"Grok: {openai_config.model}"
+            return "Grok: add xai_key.txt"
+        if OPENAI_AVAILABLE and openai_analyzer and openai_config.is_configured():
             return f"OpenAI: {openai_config.model}"
         return "OpenAI: Template Mode"
 
@@ -1217,6 +1448,8 @@ class SpeechTranscriptionApp:
 
             openai_config.set_model(model_id)
             save_persisted_model(model_id)
+            if OPENAI_AVAILABLE and openai_analyzer:
+                openai_analyzer._ensure_client()
             self.openai_status_label.config(text=self._openai_status_text())
             self.update_ai_status(f"Model changed to {model_id}")
             print(f"OpenAI model set to {model_id}")
@@ -1254,6 +1487,7 @@ class SpeechTranscriptionApp:
         if settings.browser_control:
             labels.append("Control browser")
         self.update_ai_status("Assist: " + (", ".join(labels) if labels else "Off"))
+        self._sync_user_entry_mode(focus=True)
 
     def _current_assist(self) -> AssistSettings:
         if not ASSIST_MODES_ENABLED or not hasattr(self, "voice_assist"):
@@ -1318,6 +1552,7 @@ class SpeechTranscriptionApp:
             with self._dialogue_lock:
                 history = format_recent_turns(self._dialogue)
             memory_text = load_memory()
+            attached_text = self.attached_context()
             allow_actions = browser_actions_allowed(settings.browser_control)
 
             image = None
@@ -1377,21 +1612,31 @@ class SpeechTranscriptionApp:
                 return
 
             self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+            guide_stream = self._make_ai_stream_callback(source="guide", hide_blocks=True)
             ai_content, cost = openai_analyzer.generate_screen_guide(
                 recent,
                 capture_note,
                 image=image,
-                stream_callback=self._make_ai_stream_callback(source="guide", hide_blocks=True),
+                stream_callback=guide_stream,
                 history=history,
                 memory=memory_text,
                 page_text=page_text,
-                instructions=guide_instructions(allow_actions, MEMORY_ENABLED),
+                attached=attached_text,
+                instructions=guide_instructions(allow_actions, MEMORY_ENABLED, FILE_EXCHANGE_ENABLED),
             )
-            spoken, memories, actions = split_guide_reply(ai_content)
+            spoken, memories, actions, output_files = split_guide_reply(ai_content)
             try:
                 remember(memories)
             except OSError as exc:
                 print(f"Could not save memory: {exc}")
+
+            saved_paths = []
+            try:
+                saved_paths = write_output_files(output_files)
+            except OSError as exc:
+                print(f"Could not save output file: {exc}")
+            if saved_paths:
+                self.root.after(0, lambda paths=list(saved_paths): self._note_output_files(paths))
 
             action_note = ""
             if allow_actions and actions:
@@ -1414,7 +1659,11 @@ class SpeechTranscriptionApp:
             if cost > 0:
                 self.root.after(0, lambda amount=cost: self.add_to_session_cost(amount))
                 self.root.after(0, self.increment_api_counter)
-            if action_note:
+            if saved_paths:
+                final_status = "Saved " + ", ".join(saved_paths)
+                if action_note:
+                    final_status = f"{final_status}. {action_note}"
+            elif action_note:
                 final_status = action_note
             elif page and not page.attached and page.status:
                 final_status = page.status
@@ -1425,8 +1674,8 @@ class SpeechTranscriptionApp:
             if spoken:
                 self.root.after(
                     0,
-                    lambda content=spoken, speak_reply=speak_reply: self.show_ai_analysis(
-                        content, speak=speak_reply, source="guide"
+                    lambda content=spoken, speak_reply=speak_reply, block=guide_stream.block_id: self.show_ai_analysis(
+                        content, speak=speak_reply, source="guide", block_id=block
                     ),
                 )
         except Exception as exc:
@@ -1538,6 +1787,104 @@ class SpeechTranscriptionApp:
             self.pause_button.config(text="Pause Listening", state=tk.NORMAL)
             self.status_label.config(text="Status: Listening...")
     
+    def add_context_files(self):
+        """Attach text files so the next reply can use them as context."""
+        if not FILE_EXCHANGE_ENABLED:
+            return
+        paths = filedialog.askopenfilenames(parent=self.root, title="Add files for context")
+        if not paths:
+            return
+        added = []
+        with self._attached_lock:
+            room = MAX_ATTACHED_FILES - len(self._attached_blocks)
+            for path in paths[:room]:
+                self._attached_blocks.append(load_context_file(path))
+                self._attached_names.append(os.path.basename(path))
+                added.append(os.path.basename(path))
+        if added:
+            self._refresh_files_label()
+            self.update_ai_status("Attached " + ", ".join(added))
+        elif paths:
+            self.update_ai_status(f"Only {MAX_ATTACHED_FILES} files can be attached")
+
+    def clear_context_files(self):
+        with self._attached_lock:
+            self._attached_blocks = []
+            self._attached_names = []
+        self._refresh_files_label()
+        self.update_ai_status("Cleared attached files")
+
+    def attached_context(self) -> str:
+        with self._attached_lock:
+            blocks = list(self._attached_blocks)
+        return format_attached_context(blocks)
+
+    def _refresh_files_label(self):
+        if not hasattr(self, "files_label"):
+            return
+        with self._attached_lock:
+            names = list(self._attached_names)
+        if names:
+            shown = ", ".join(names)
+            if len(shown) > 80:
+                shown = shown[:77] + "..."
+            self.files_label.config(text=f"Files: {shown}")
+        else:
+            self.files_label.config(text="Files: none")
+
+    def _note_output_files(self, paths: list[str]):
+        self._output_files.extend(paths)
+        if hasattr(self, "download_button"):
+            self.download_button.config(state=tk.NORMAL)
+        print("Saved " + ", ".join(paths))
+
+    def download_output_file(self):
+        """Copy a produced file to a place the user chooses."""
+        if not self._output_files:
+            return
+        source = self._output_files[-1]
+        if len(self._output_files) > 1:
+            choice = self._choose_output_file()
+            if not choice:
+                return
+            source = choice
+        destination = filedialog.asksaveasfilename(
+            parent=self.root,
+            title="Download file",
+            initialfile=os.path.basename(source),
+        )
+        if not destination:
+            return
+        try:
+            shutil.copyfile(source, destination)
+        except OSError as exc:
+            messagebox.showerror("Download failed", str(exc))
+            return
+        self.update_ai_status(f"Downloaded {destination}")
+
+    def _choose_output_file(self) -> str:
+        """Pick one produced file when more than one is waiting."""
+        picker = tk.Toplevel(self.root)
+        picker.title("Download file")
+        picker.transient(self.root)
+        chosen = {"path": ""}
+        listbox = tk.Listbox(picker, width=60, height=min(8, len(self._output_files)))
+        for path in self._output_files:
+            listbox.insert(tk.END, path)
+        listbox.selection_set(tk.END)
+        listbox.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
+
+        def use_selection():
+            selection = listbox.curselection()
+            if selection:
+                chosen["path"] = self._output_files[selection[0]]
+            picker.destroy()
+
+        ttk.Button(picker, text="Download", command=use_selection).pack(pady=(0, 8))
+        picker.grab_set()
+        self.root.wait_window(picker)
+        return chosen["path"]
+
     def on_live_scroll_toggled(self):
         """Follow the newest text when Live scroll is turned on."""
         if self.live_scroll.get():
@@ -1568,10 +1915,11 @@ class SpeechTranscriptionApp:
         widget.bind("<Button-4>", on_wheel)
         widget.bind("<Button-5>", on_wheel)
 
-    def show_ai_analysis(self, content, speak=False, source="analysis"):
+    def show_ai_analysis(self, content, speak=False, source="analysis", block_id=None):
         """Append AI output. A streaming update replaces only its own block.
 
         Older answers stay in the pane. Live scroll follows the end when enabled.
+        block_id keeps two answers that arrive together from copying each other.
         """
         try:
             if not hasattr(self, "_ai_sections"):
@@ -1585,9 +1933,14 @@ class SpeechTranscriptionApp:
                 return
 
             self.ai_text.config(state=tk.NORMAL)
-            start_mark = f"{source}_live_start"
-            end_mark = f"{source}_live_end"
-            same_block = analysis_continues(previous, incoming) and start_mark in self.ai_text.mark_names()
+            if block_id:
+                start_mark = f"blk{block_id}s"
+                end_mark = f"blk{block_id}e"
+                same_block = start_mark in self.ai_text.mark_names()
+            else:
+                start_mark = f"{source}_live_start"
+                end_mark = f"{source}_live_end"
+                same_block = analysis_continues(previous, incoming) and start_mark in self.ai_text.mark_names()
             if same_block:
                 self.ai_text.delete(start_mark, end_mark)
                 self.ai_text.insert(start_mark, incoming)
@@ -1717,29 +2070,30 @@ class SpeechTranscriptionApp:
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
                 self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+                stream = self._make_ai_stream_callback()
                 ai_content, cost = openai_analyzer.generate_topic_analysis(
                     category,
                     explanation,
-                    stream_callback=self._make_ai_stream_callback(),
+                    stream_callback=stream,
                 )
                 if cost > 0:
                     # Schedule cost and API counter updates on main thread to prevent hanging
                     self.root.after(0, lambda: self.add_to_session_cost(cost))
                     self.root.after(0, lambda: self.increment_api_counter())
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
-                return ai_content
+                return ai_content, stream.block_id
             else:
                 # Fallback to template-based analysis
                 print(f"Using template fallback for topic analysis: {category}")
                 self.root.after(0, lambda: self.update_ai_status("Using Template"))
                 ai_content = self._get_template_ai_analysis(category, explanation)
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
-                return ai_content
+                return ai_content, None
             
         except Exception as e:
             print(f"AI analysis generation failed: {e}")
             self.root.after(0, lambda: self.update_ai_status("Error"))
-            return f"AI analysis generation failed: {e}"
+            return f"AI analysis generation failed: {e}", None
     
     def _get_template_ai_analysis(self, category, explanation):
         """Template-based AI analysis fallback"""
@@ -1884,6 +2238,11 @@ class SpeechTranscriptionApp:
                 context_parts.append("QUESTION TYPE:")
                 context_parts.append(question_type)
                 context_parts.append("")
+                attached_text = self.attached_context()
+                if attached_text:
+                    context_parts.append("ATTACHED FILES:")
+                    context_parts.append(attached_text)
+                    context_parts.append("")
                 context_parts.append("IMPORTANT: Focus ONLY on the user's actual question. Do not inject irrelevant content.")
                 context_parts.append("Please provide a comprehensive response that addresses the ENTIRE question above.")
                 
@@ -1892,10 +2251,11 @@ class SpeechTranscriptionApp:
                 enhanced_explanation['question_type'] = question_type
                 enhanced_explanation['session_context'] = f"This is part of an ongoing technical discussion session. Question type: {question_type}"
                 
+                stream = self._make_ai_stream_callback()
                 ai_content, cost = openai_analyzer.generate_topic_analysis(
                     category,
                     enhanced_explanation,
-                    stream_callback=self._make_ai_stream_callback(),
+                    stream_callback=stream,
                 )
                 if cost > 0:
                     # Schedule cost and API counter updates on main thread to prevent hanging
@@ -1904,7 +2264,7 @@ class SpeechTranscriptionApp:
                 
                 # Update status to completed
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
-                return ai_content
+                return ai_content, stream.block_id
             else:
                 # Fallback to template-based analysis with context and question type
                 print(f"Using template fallback for contextual analysis: {category} (type: {question_type})")
@@ -1913,12 +2273,12 @@ class SpeechTranscriptionApp:
                 self.root.after(0, lambda: self.update_ai_status("Using Template"))
                 ai_content = self._get_contextual_template_analysis(category, explanation, full_transcription, detected_keyword, question_type)
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
-                return ai_content
+                return ai_content, None
             
         except Exception as e:
             print(f"Contextual AI analysis generation failed: {e}")
             self.root.after(0, lambda: self.update_ai_status("Error"))
-            return f"Contextual AI analysis generation failed: {e}"
+            return f"Contextual AI analysis generation failed: {e}", None
     
     def _get_contextual_template_analysis(self, category, explanation, full_transcription, detected_keyword, question_type='troubleshooting'):
         """Template-based contextual analysis fallback with adaptive question types"""
@@ -2044,7 +2404,7 @@ class SpeechTranscriptionApp:
         
         return ai_content
     
-    def check_and_analyze_keywords_throttled(self, text):
+    def check_and_analyze_keywords_throttled(self, text, full_transcription=None):
         """Throttled version of keyword analysis to prevent UI freezing"""
         try:
             current_time = time.time()
@@ -2053,8 +2413,11 @@ class SpeechTranscriptionApp:
             if current_time - self.last_ai_analysis_time < self.ai_analysis_throttle_seconds:
                 return  # Skip analysis if too soon
             
-            # Get current full transcription
-            current_transcription = self.transcription_text.get("1.0", tk.END).strip()
+            # The transcript is read on the UI thread. Reading the widget here can stall the window.
+            if full_transcription is None:
+                current_transcription = self.transcription_text.get("1.0", tk.END).strip()
+            else:
+                current_transcription = full_transcription.strip()
             
             # Only analyze if transcription has changed since last analysis
             # After Clear Text, last_analyzed_transcription is "", so any new content should trigger analysis
@@ -2145,23 +2508,28 @@ class SpeechTranscriptionApp:
         except Exception as e:
             print(f"Error processing buffered content: {e}")
     
-    def show_topic_explanation(self, category):
+    def show_topic_explanation(self, category, with_ai=True):
         """Display topic explanation for the clicked keyword category"""
-        # Check cache first
-        cached_explanation = self.get_cached_explanation(category)
+        explanations = self.get_topic_explanations()
+        explanation = explanations.get(category)
+        question = ""
+        try:
+            question = self.transcription_text.get("1.0", "end-1c").lower()
+        except tk.TclError:
+            question = ""
+        boot_words = ("boot", "grub", "startup", "initramfs", "uefi", "bios")
+        has_boot = bool(explanation and "boot_process" in explanation)
+        show_boot = ALWAYS_SHOW_BOOT_PROCESS or any(word in question for word in boot_words)
+        topic_key = category if show_boot or not has_boot else f"{category}:direct"
+        cached_explanation = self.get_cached_explanation(topic_key)
         if cached_explanation:
-            # Use cached explanation
             self.topic_text.config(state=tk.NORMAL)
             self.topic_text.delete("1.0", tk.END)
             self.topic_text.insert("1.0", cached_explanation)
             self.topic_text.config(state=tk.DISABLED)
             return
-        
-        explanations = self.get_topic_explanations()
-        
+
         if category in explanations:
-            explanation = explanations[category]
-            
             # Clear and update topic text
             self.topic_text.config(state=tk.NORMAL)
             self.topic_text.delete("1.0", tk.END)
@@ -2170,8 +2538,8 @@ class SpeechTranscriptionApp:
             formatted_text = f"Topic: {explanation['title']}\n\n"
             formatted_text += f"Summary: {explanation['summary']}\n\n"
             
-            # Include boot process explanation if available (for Linux topic)
-            if 'boot_process' in explanation:
+            # The Linux topic carries a boot writeup. Show it for boot questions.
+            if 'boot_process' in explanation and show_boot:
                 formatted_text += f"{explanation['boot_process']}\n\n"
             
             formatted_text += f"Technical Challenges:\n{explanation['challenges']}\n\n"
@@ -2181,13 +2549,13 @@ class SpeechTranscriptionApp:
             self.topic_text.config(state=tk.DISABLED)
             
             # Cache the explanation
-            self.cache_explanation(category, formatted_text)
+            self.cache_explanation(topic_key, formatted_text)
             
             # Show AI analysis for the topic (if enabled)
-            if self.ai_enabled_var.get():
-                ai_content = self.generate_ai_analysis(category, explanation)
-                self.show_ai_analysis(ai_content)
-            else:
+            if with_ai and self.ai_enabled_var.get():
+                ai_content, block_id = self.generate_ai_analysis(category, explanation)
+                self.show_ai_analysis(ai_content, block_id=block_id)
+            elif with_ai:
                 self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
     
     def get_topic_explanations(self):
@@ -2256,6 +2624,13 @@ class SpeechTranscriptionApp:
                     print(f"DEBUG: Detected question type '{question_type}' with pattern '{pattern}'")
                     return question_type
         
+        if is_direct_howto(text_lower):
+            print("DEBUG: Detected question type 'howto'")
+            return "howto"
+        if is_direct_explanation(text_lower):
+            print("DEBUG: Detected question type 'explain'")
+            return "explain"
+
         # Default to troubleshooting if no specific type detected
         print(f"DEBUG: No specific question type detected, defaulting to 'troubleshooting'")
         return 'troubleshooting'
@@ -2319,6 +2694,8 @@ class SpeechTranscriptionApp:
     
     def provide_troubleshooting_suggestions(self, question_text):
         """Provide troubleshooting suggestions based on the question"""
+        if is_direct_howto(question_text) or is_direct_explanation(question_text):
+            return
         # Check cache first
         question_hash = hashlib.md5(question_text.encode()).hexdigest()
         cached_suggestions = self.get_cached_troubleshooting(question_hash)
@@ -2355,8 +2732,8 @@ class SpeechTranscriptionApp:
             # Show AI analysis for troubleshooting (if enabled)
             if self.ai_enabled_var.get():
                 # Use the new contextual AI analysis instead of old troubleshooting
-                ai_content = self.generate_contextual_ai_analysis("troubleshooting", suggestions, question_text, "troubleshooting")
-                self.show_ai_analysis(ai_content)
+                ai_content, block_id = self.generate_contextual_ai_analysis("troubleshooting", suggestions, question_text, "troubleshooting")
+                self.show_ai_analysis(ai_content, block_id=block_id)
             else:
                 self.show_ai_analysis("AI Analysis disabled. Enable the checkbox to see AI-enhanced insights.")
     
@@ -2528,6 +2905,7 @@ class SpeechTranscriptionApp:
     def clear_transcription(self):
         """Clear the transcription text and all analysis panes"""
         self.transcription_text.delete("1.0", tk.END)
+        self._ensure_entry_mark()
         
         # Clear all keyword tags
         tags_to_remove = [tag for tag in self.transcription_text.tag_names() 
@@ -2609,8 +2987,133 @@ class SpeechTranscriptionApp:
         
         print("Cleared transcription, topic explanation, and AI analysis panes")
 
+    def begin_training_run(self, prompt: str, output_path: str, timeout: float):
+        """Inject one problem, then record the transcript and the window."""
+        self._training_prompt = prompt
+        self._training_output = output_path
+        self._training_timeout = timeout
+        self._training_exit_code = 1
+        self._training_finished = False
+        self._training_last_len = 0
+        self._training_stable_since = None
+        self.root.title("agent-hoy training")
+        self.root.after(600, self._training_begin)
+
+    def _training_begin(self):
+        if hasattr(self, "transcription_assist"):
+            self.transcription_assist.set(True)
+        if hasattr(self, "voice_assist"):
+            self.voice_assist.set(False)
+        if hasattr(self, "vision_mode"):
+            self.vision_mode.set("screen")
+        if hasattr(self, "browser_control"):
+            self.browser_control.set(False)
+        self._training_started = time.time()
+        self._training_deadline = self._training_started + self._training_timeout
+        if TRAINING_WINDOW_ONTOP:
+            try:
+                self.root.deiconify()
+                self.root.lift()
+                self.root.attributes("-topmost", True)
+                self.root.update()
+            except tk.TclError:
+                pass
+        self.update_transcription(self._training_prompt)
+        self.root.after(400, self._training_poll)
+
+    def _training_poll(self):
+        if self._training_finished:
+            return
+        if time.time() > self._training_deadline:
+            self._training_finish(timed_out=True)
+            return
+        content = self.ai_text.get("1.0", "end-1c")
+        length = len(content.strip())
+        busy = self.guide_running or self.ai_analysis_running or self._speech_active
+        if length != self._training_last_len:
+            self._training_last_len = length
+            self._training_stable_since = time.time()
+        stable = (
+            self._training_stable_since is not None
+            and time.time() - self._training_stable_since >= STABLE_SECONDS
+        )
+        if length > 0 and not busy and stable and time.time() - self._training_started > 3:
+            self._training_finish(timed_out=False)
+            return
+        self.root.after(400, self._training_poll)
+
+    def _training_finish(self, timed_out: bool):
+        if self._training_finished:
+            return
+        self._training_finished = True
+        from pathlib import Path
+
+        try:
+            self.root.attributes("-topmost", False)
+            self.root.deiconify()
+            self.root.lift()
+            self.root.update_idletasks()
+        except tk.TclError:
+            pass
+        output = Path(self._training_output)
+        image_path = output.with_suffix(".png")
+        try:
+            hwnd = int(self.root.winfo_id())
+        except (tk.TclError, ValueError, TypeError):
+            hwnd = 0
+        captured = capture_window_by_id(hwnd) if hwnd else None
+        image_bytes = captured.png_bytes if captured else None
+        vision_error = None if captured is None else captured.error
+        vision_label = "" if captured is None else captured.label
+        if image_bytes:
+            output.parent.mkdir(parents=True, exist_ok=True)
+            image_path.write_bytes(image_bytes)
+        transcript = self.transcription_text.get("1.0", "end-1c")
+        ai_text = self.ai_text.get("1.0", "end-1c")
+        topic_text = self.topic_text.get("1.0", "end-1c")
+        evaluation = evaluate_session(
+            self._training_prompt,
+            transcript,
+            ai_text,
+            vision_error,
+            image_bytes,
+            timed_out,
+        )
+        iteration = 1
+        suffix = output.stem.split("-")[-1]
+        if suffix.isdigit():
+            iteration = int(suffix)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            render_session_report(
+                iteration=iteration,
+                prompt=self._training_prompt,
+                transcript=transcript,
+                ai_text=ai_text,
+                topic_text=topic_text,
+                vision_label=vision_label,
+                vision_error=vision_error,
+                image_name=image_path.name,
+                evaluation=evaluation,
+            ),
+            encoding="utf-8",
+        )
+        self._training_exit_code = 0 if evaluation.passed else 1
+        print(f"Training report {output} passed={str(evaluation.passed).lower()}")
+        self.root.after(200, self.root.quit)
+
 def main():
     """Main application entry point"""
+    args = parse_train_args()
+    if args.train:
+        raise SystemExit(run_training(args))
+    if args.training_run and not args.prompt:
+        print("A training run needs a prompt.")
+        raise SystemExit(2)
+    if args.training_run and not args.output:
+        print("A training run needs an output path.")
+        raise SystemExit(2)
+
     root = tk.Tk()
     app = SpeechTranscriptionApp(root)
     
@@ -2621,7 +3124,11 @@ def main():
         root.destroy()
     
     root.protocol("WM_DELETE_WINDOW", on_closing)
+    if args.training_run:
+        app.begin_training_run(args.prompt, args.output, args.timeout)
     root.mainloop()
+    if args.training_run:
+        raise SystemExit(getattr(app, "_training_exit_code", 1))
 
 if __name__ == "__main__":
     main()

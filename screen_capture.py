@@ -60,6 +60,9 @@ def capture_window_by_id(window_id: int) -> CaptureResult:
     try:
         if sys.platform == "win32":
             hwnd = _windows_root(int(window_id))
+            printed = _print_window_png(hwnd)
+            if printed and printed.png_bytes:
+                return printed
             return _capture_hwnd(hwnd)
         return _capture_screen()
     except Exception as exc:
@@ -273,6 +276,80 @@ def _windows_window(exclude_window_id: int | None, preferred_window_id: int | No
         return screen
 
     return _capture_hwnd(hwnd)
+
+
+def _print_window_png(hwnd: int) -> CaptureResult | None:
+    """Copy the window's own pixels. A screen grab would show whatever covers it."""
+    import ctypes
+
+    user32, wintypes = _windows_user32()
+    gdi32 = ctypes.windll.gdi32
+    rect = wintypes.RECT()
+    hwnd = int(hwnd)
+    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+        return None
+    width = int(rect.right - rect.left)
+    height = int(rect.bottom - rect.top)
+    if width < 20 or height < 20:
+        return None
+
+    class BITMAPINFOHEADER(ctypes.Structure):
+        _fields_ = [
+            ("biSize", wintypes.DWORD),
+            ("biWidth", wintypes.LONG),
+            ("biHeight", wintypes.LONG),
+            ("biPlanes", wintypes.WORD),
+            ("biBitCount", wintypes.WORD),
+            ("biCompression", wintypes.DWORD),
+            ("biSizeImage", wintypes.DWORD),
+            ("biXPelsPerMeter", wintypes.LONG),
+            ("biYPelsPerMeter", wintypes.LONG),
+            ("biClrUsed", wintypes.DWORD),
+            ("biClrImportant", wintypes.DWORD),
+        ]
+
+    hdc = user32.GetWindowDC(hwnd)
+    if not hdc:
+        return None
+    memory = gdi32.CreateCompatibleDC(hdc)
+    bitmap = gdi32.CreateCompatibleBitmap(hdc, width, height)
+    if not memory or not bitmap:
+        if bitmap:
+            gdi32.DeleteObject(bitmap)
+        if memory:
+            gdi32.DeleteDC(memory)
+        user32.ReleaseDC(hwnd, hdc)
+        return None
+    selected = gdi32.SelectObject(memory, bitmap)
+    try:
+        # 2 asks for the full window contents, including the client area.
+        if not user32.PrintWindow(hwnd, memory, 2):
+            if not user32.PrintWindow(hwnd, memory, 0):
+                return None
+        info = BITMAPINFOHEADER()
+        info.biSize = ctypes.sizeof(BITMAPINFOHEADER)
+        info.biWidth = width
+        info.biHeight = -height
+        info.biPlanes = 1
+        info.biBitCount = 32
+        info.biCompression = 0
+        pixels = ctypes.create_string_buffer(width * height * 4)
+        lines = gdi32.GetDIBits(memory, bitmap, 0, height, pixels, ctypes.byref(info), 0)
+        if not lines:
+            return None
+        image = Image.frombuffer("RGBA", (width, height), pixels, "raw", "BGRA", 0, 1)
+        sample = image.resize((1, 1)).getpixel((0, 0))
+        if isinstance(sample, tuple) and max(sample[:3]) < 8:
+            return None
+        rgb = image.convert("RGB")
+        buffer = io.BytesIO()
+        rgb.save(buffer, format="PNG")
+        return CaptureResult(buffer.getvalue(), width, height, _windows_title(hwnd), None, hwnd)
+    finally:
+        gdi32.SelectObject(memory, selected)
+        gdi32.DeleteObject(bitmap)
+        gdi32.DeleteDC(memory)
+        user32.ReleaseDC(hwnd, hdc)
 
 
 def _capture_hwnd(hwnd: int) -> CaptureResult:
