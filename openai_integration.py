@@ -6,13 +6,25 @@ import hashlib
 import json
 import os
 import time
+import urllib.error
+import urllib.request
 from datetime import datetime, timedelta
 from typing import Callable, Optional
 
 import openai
 
 from assist_mode import GUIDE_INSTRUCTIONS, GUIDE_MAX_OUTPUT_TOKENS, build_guide_prompt
-from openai_config import XAI_BASE_URL, is_grok_model, openai_config
+from openai_config import (
+    LMSTUDIO_BASE_URL,
+    XAI_BASE_URL,
+    is_grok_model,
+    is_lmstudio_model,
+    openai_config,
+    pick_listed_lmstudio_model,
+    pick_loaded_lmstudio_model,
+    provider_label,
+    uses_chat_completions,
+)
 
 
 class OpenAIAnalyzer:
@@ -27,6 +39,7 @@ class OpenAIAnalyzer:
         }
 
         self._client_provider = None
+        self._lmstudio_loaded_id = None
         if self._ensure_client():
             print(f"{self._client_provider} client initialized successfully")
         elif openai_config.is_configured() or openai_config.xai_is_configured():
@@ -35,17 +48,34 @@ class OpenAIAnalyzer:
             print("OpenAI not configured - using template fallback")
 
     def is_available(self) -> bool:
+        if is_lmstudio_model(openai_config.model):
+            return True
         return openai_config.is_configured() or openai_config.xai_is_configured()
 
+    def _provider_name(self) -> str:
+        if is_lmstudio_model(openai_config.model):
+            return "lmstudio"
+        if is_grok_model(openai_config.model):
+            return "xai"
+        return "openai"
+
     def _ensure_client(self) -> bool:
-        """Point the client at OpenAI or xAI for the model currently selected."""
-        provider = "xai" if is_grok_model(openai_config.model) else "openai"
+        """Point the client at OpenAI, xAI, or the LM Studio server."""
+        provider = self._provider_name()
         if self.client is not None and self._client_provider == provider:
+            if provider == "lmstudio":
+                self._lmstudio_loaded_id = self._query_lmstudio_model()
             return True
         self.client = None
         self._client_provider = None
         try:
-            if provider == "xai":
+            if provider == "lmstudio":
+                self.client = openai.OpenAI(
+                    api_key=openai_config.lmstudio_api_key or "lm-studio",
+                    base_url=LMSTUDIO_BASE_URL,
+                )
+                self._lmstudio_loaded_id = self._query_lmstudio_model()
+            elif provider == "xai":
                 if not openai_config.xai_is_configured():
                     return False
                 self.client = openai.OpenAI(
@@ -62,6 +92,31 @@ class OpenAIAnalyzer:
             return False
         self._client_provider = provider
         return True
+
+    def _query_lmstudio_model(self) -> Optional[str]:
+        """Ask the local server which model is loaded. None if it is down or empty."""
+        origin = LMSTUDIO_BASE_URL.rstrip("/")
+        if origin.endswith("/v1"):
+            origin = origin[:-3]
+        headers = {"Accept": "application/json"}
+        if openai_config.lmstudio_api_key:
+            headers["Authorization"] = f"Bearer {openai_config.lmstudio_api_key}"
+        loaded = self._lmstudio_get_json(origin + "/api/v0/models", headers)
+        if isinstance(loaded, dict):
+            return pick_loaded_lmstudio_model(loaded.get("data") or [])
+        listed = self._lmstudio_get_json(LMSTUDIO_BASE_URL.rstrip("/") + "/models", headers)
+        if isinstance(listed, dict):
+            return pick_listed_lmstudio_model(listed.get("data") or [])
+        return None
+
+    def _lmstudio_get_json(self, url: str, headers: dict) -> Optional[dict]:
+        request = urllib.request.Request(url, headers=headers)
+        try:
+            with urllib.request.urlopen(request, timeout=2) as response:
+                payload = json.loads(response.read().decode("utf-8"))
+        except (urllib.error.URLError, TimeoutError, OSError, json.JSONDecodeError, ValueError):
+            return None
+        return payload if isinstance(payload, dict) else None
 
     def _check_rate_limits(self, estimated_tokens: int = 0) -> bool:
         now = time.time()
@@ -90,8 +145,14 @@ class OpenAIAnalyzer:
         self.rate_limit_tracker["request_times"].append(now)
         self.rate_limit_tracker["token_count"] += tokens_used
 
+    def _request_model_id(self) -> str:
+        if is_lmstudio_model(openai_config.model) and self._lmstudio_loaded_id:
+            return self._lmstudio_loaded_id
+        return openai_config.model
+
     def _get_cache_key(self, prompt: str, context: str) -> str:
-        content = f"{openai_config.model}:{prompt}:{context}"
+        model_name = self._request_model_id()
+        content = f"{model_name}:{prompt}:{context}"
         return hashlib.md5(content.encode()).hexdigest()
 
     def _build_responses_kwargs(
@@ -156,7 +217,7 @@ class OpenAIAnalyzer:
         max_output_tokens: Optional[int] = None,
     ) -> dict:
         kwargs = {
-            "model": openai_config.model,
+            "model": self._request_model_id(),
             "messages": [
                 {"role": "system", "content": instructions or openai_config.system_instructions},
                 {"role": "user", "content": self._chat_user_content(prompt, image)},
@@ -164,7 +225,9 @@ class OpenAIAnalyzer:
             "max_tokens": max_output_tokens or openai_config.max_tokens,
         }
 
-        if is_grok_model(openai_config.model):
+        if is_lmstudio_model(openai_config.model):
+            kwargs["temperature"] = openai_config.temperature
+        elif is_grok_model(openai_config.model):
             kwargs["reasoning_effort"] = openai_config.reasoning_effort or "low"
         elif openai_config.is_current_model_reasoning():
             kwargs["reasoning_effort"] = openai_config.reasoning_effort
@@ -529,8 +592,11 @@ class OpenAIAnalyzer:
 
         ai_response = response.choices[0].message.content or ""
         usage = response.usage
-        cost = self._calculate_cost(usage.prompt_tokens, usage.completion_tokens)
-        return ai_response, cost, usage.total_tokens
+        prompt_tokens = getattr(usage, "prompt_tokens", 0) or 0
+        completion_tokens = getattr(usage, "completion_tokens", 0) or 0
+        total_tokens = getattr(usage, "total_tokens", 0) or (prompt_tokens + completion_tokens)
+        cost = self._calculate_cost(prompt_tokens, completion_tokens)
+        return ai_response, cost, total_tokens
 
     def _make_api_call(
         self,
@@ -547,12 +613,22 @@ class OpenAIAnalyzer:
             use_cache = False
 
         if not self._ensure_client():
+            if is_lmstudio_model(openai_config.model):
+                return "LM Studio client was not created.", 0.0
             if is_grok_model(openai_config.model):
                 return (
-                    "Grok needs an API key in xai_key.txt or the XAI_API_KEY environment variable.",
+                    "Grok needs a grok = line in ai_provider_keys.txt, or the XAI_API_KEY environment variable.",
                     0.0,
                 )
             return "OpenAI is not configured. Voice and vision need an API key.", 0.0
+
+        if is_lmstudio_model(openai_config.model) and not self._lmstudio_loaded_id:
+            return (
+                "LM Studio is not answering at "
+                + LMSTUDIO_BASE_URL
+                + ". Start the local server and load a model.",
+                0.0,
+            )
 
         if not self._check_rate_limits(estimated_tokens=openai_config.max_tokens):
             return "Rate limit exceeded. Please wait before making more requests.", 0.0
@@ -566,7 +642,9 @@ class OpenAIAnalyzer:
                 return cached_response, 0.0
 
         try:
-            use_responses = openai_config.use_responses_api and not is_grok_model(openai_config.model)
+            use_responses = openai_config.use_responses_api and not uses_chat_completions(
+                openai_config.model
+            )
             if use_responses:
                 ai_response, cost, total_tokens = self._make_responses_api_call(
                     prompt,
@@ -592,15 +670,20 @@ class OpenAIAnalyzer:
 
         except Exception as e:
             error_text = str(e).lower()
-            print(f"OpenAI API error: {e}")
+            name = provider_label(openai_config.model)
+            print(f"{name} API error: {e}")
             if "temperature" in error_text and openai_config.is_current_model_reasoning():
                 print(
                     "Hint: GPT-5 reasoning models do not support temperature; "
                     "use OPENAI_REASONING_EFFORT and OPENAI_TEXT_VERBOSITY instead."
                 )
-            if use_fallback and openai_config.use_fallback_on_error:
+            if (
+                use_fallback
+                and openai_config.use_fallback_on_error
+                and not is_lmstudio_model(openai_config.model)
+            ):
                 return self._get_fallback_response(prompt, context), 0.0
-            return f"OpenAI API error: {str(e)}", 0.0
+            return f"{name} API error: {str(e)}", 0.0
 
     def _get_fallback_response(self, prompt: str, context: str) -> str:
         if openai_config.fallback_to_template:

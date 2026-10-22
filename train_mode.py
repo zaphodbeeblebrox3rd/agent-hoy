@@ -116,6 +116,7 @@ def evaluate_session(
     analysis = (ai_text or "").strip()
     error_prefixes = (
         "OpenAI API error",
+        "Grok API error",
         "Guide turn failed",
         "OpenAI is not configured",
         "AI Analysis disabled",

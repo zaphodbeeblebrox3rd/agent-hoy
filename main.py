@@ -162,7 +162,9 @@ from image_payload import prepare_encoded
 from openai_config import (
     AVAILABLE_MODELS,
     MODEL_ID_BY_LABEL,
+    is_lmstudio_model,
     openai_config,
+    provider_label,
     save_persisted_model,
 )
 from screen_capture import capture_frame, capture_window_by_id, foreign_window_id
@@ -1429,10 +1431,15 @@ class SpeechTranscriptionApp:
     def _openai_status_text(self) -> str:
         from openai_config import is_grok_model
 
+        if is_lmstudio_model(openai_config.model):
+            loaded = getattr(openai_analyzer, "_lmstudio_loaded_id", None) if openai_analyzer else None
+            if loaded:
+                return f"LM Studio: {loaded}"
+            return "LM Studio: start server and load a model"
         if is_grok_model(openai_config.model):
             if openai_config.xai_is_configured():
                 return f"Grok: {openai_config.model}"
-            return "Grok: add xai_key.txt"
+            return "Grok: add key to ai_provider_keys.txt"
         if OPENAI_AVAILABLE and openai_analyzer and openai_config.is_configured():
             return f"OpenAI: {openai_config.model}"
         return "OpenAI: Template Mode"
@@ -1611,7 +1618,8 @@ class SpeechTranscriptionApp:
                 )
                 return
 
-            self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+            calling = f"Calling {provider_label(openai_config.model)}..."
+            self.root.after(0, lambda message=calling: self.update_ai_status(message))
             guide_stream = self._make_ai_stream_callback(source="guide", hide_blocks=True)
             ai_content, cost = openai_analyzer.generate_screen_guide(
                 recent,
@@ -1734,6 +1742,9 @@ class SpeechTranscriptionApp:
 
     def _speak_reply(self, text: str, generation: int):
         if generation != self._speech_generation:
+            return
+        if is_lmstudio_model(openai_config.model):
+            self.root.after(0, lambda: self.update_ai_status("Voice stays off for LM Studio"))
             return
         if not (OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.client):
             self.root.after(0, lambda: self.update_ai_status("Speech needs an API key"))
@@ -2066,10 +2077,11 @@ class SpeechTranscriptionApp:
             
             # Use OpenAI if available and enabled
             if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
-                print(f"Using OpenAI for topic analysis: {category}")
+                print(f"Using {provider_label(openai_config.model)} for topic analysis: {category}")
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
-                self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+                calling = f"Calling {provider_label(openai_config.model)}..."
+                self.root.after(0, lambda message=calling: self.update_ai_status(message))
                 stream = self._make_ai_stream_callback()
                 ai_content, cost = openai_analyzer.generate_topic_analysis(
                     category,
@@ -2138,10 +2150,11 @@ class SpeechTranscriptionApp:
             
             # Use OpenAI if available and enabled
             if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
-                print(f"Using OpenAI for troubleshooting analysis")
+                print(f"Using {provider_label(openai_config.model)} for troubleshooting analysis")
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
-                self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+                calling = f"Calling {provider_label(openai_config.model)}..."
+                self.root.after(0, lambda message=calling: self.update_ai_status(message))
                 ai_content, cost = openai_analyzer.generate_troubleshooting_analysis(
                     question_text,
                     suggestions,
@@ -2219,10 +2232,11 @@ class SpeechTranscriptionApp:
             
             # Use OpenAI if available and enabled
             if OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available():
-                print(f"Using OpenAI for contextual analysis: {category} (type: {question_type})")
+                print(f"Using {provider_label(openai_config.model)} for contextual analysis: {category} (type: {question_type})")
                 print(f"OpenAI_AVAILABLE: {OPENAI_AVAILABLE}")
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
-                self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
+                calling = f"Calling {provider_label(openai_config.model)}..."
+                self.root.after(0, lambda message=calling: self.update_ai_status(message))
                 
                 # Create enhanced context for OpenAI with question type
                 enhanced_explanation = explanation.copy()

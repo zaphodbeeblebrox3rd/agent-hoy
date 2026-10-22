@@ -3,6 +3,7 @@
 cache/
 openai_key.txt
 xai_key.txt
+ai_provider_keys.txt
 # Live assistant memory
 memory/
 # Training session transcripts and screenshots

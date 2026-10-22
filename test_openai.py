@@ -85,6 +85,28 @@ def test_reasoning_model_detection():
         assert is_grok_model("gpt-4.1-mini") is False
         assert is_reasoning_model("grok-4.7") is False
         assert any(model_id == "grok-4.7" for _label, model_id in AVAILABLE_MODELS)
+        from openai_config import (
+            is_lmstudio_model,
+            pick_loaded_lmstudio_model,
+            provider_label,
+            uses_chat_completions,
+        )
+
+        assert is_lmstudio_model("lmstudio") is True
+        assert is_lmstudio_model("grok-4.7") is False
+        assert is_reasoning_model("lmstudio") is False
+        assert uses_chat_completions("lmstudio") is True
+        assert uses_chat_completions("gpt-4.1-mini") is False
+        assert provider_label("lmstudio") == "LM Studio"
+        assert any(model_id == "lmstudio" for _label, model_id in AVAILABLE_MODELS)
+        assert pick_loaded_lmstudio_model(
+            [
+                {"id": "embed", "type": "embeddings", "state": "loaded"},
+                {"id": "qwen-local", "type": "llm", "state": "not-loaded"},
+                {"id": "llama-local", "type": "llm", "state": "loaded"},
+            ]
+        ) == "llama-local"
+        assert pick_loaded_lmstudio_model([{"id": "waiting", "state": "not-loaded"}]) is None
         print("OK reasoning model detection")
         return True
     except Exception as e:
@@ -101,18 +123,32 @@ def test_responses_kwargs_builder():
         analyzer = OpenAIAnalyzer()
         original_model = openai_config.get_model()
 
-        openai_config.set_model("gpt-5.4-mini")
-        gpt5_kwargs = analyzer._build_responses_kwargs("test prompt")
-        assert "temperature" not in gpt5_kwargs
-        assert gpt5_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
-        assert gpt5_kwargs["text"]["verbosity"] == openai_config.text_verbosity
+        try:
+            openai_config.set_model("gpt-5.4-mini")
+            gpt5_kwargs = analyzer._build_responses_kwargs("test prompt")
+            assert "temperature" not in gpt5_kwargs
+            assert gpt5_kwargs["reasoning"]["effort"] == openai_config.reasoning_effort
+            assert gpt5_kwargs["text"]["verbosity"] == openai_config.text_verbosity
 
-        openai_config.set_model("gpt-4.1-mini")
-        gpt4_kwargs = analyzer._build_responses_kwargs("test prompt")
-        assert "temperature" in gpt4_kwargs
-        assert "reasoning" not in gpt4_kwargs
+            openai_config.set_model("gpt-4.1-mini")
+            gpt4_kwargs = analyzer._build_responses_kwargs("test prompt")
+            assert "temperature" in gpt4_kwargs
+            assert "reasoning" not in gpt4_kwargs
 
-        openai_config.set_model(original_model)
+            openai_config.set_model("lmstudio")
+            analyzer._lmstudio_loaded_id = "llama-local"
+            local_kwargs = analyzer._build_chat_completions_kwargs("test prompt")
+            assert local_kwargs["model"] == "llama-local"
+            assert "temperature" in local_kwargs
+            assert "reasoning_effort" not in local_kwargs
+
+            openai_config.set_model("grok-4.7")
+            grok_kwargs = analyzer._build_chat_completions_kwargs("test prompt")
+            assert grok_kwargs["model"] == "grok-4.7"
+            assert "temperature" not in grok_kwargs
+            assert "reasoning_effort" in grok_kwargs
+        finally:
+            openai_config.set_model(original_model)
         print("OK Responses API kwargs builder")
         return True
     except Exception as e:

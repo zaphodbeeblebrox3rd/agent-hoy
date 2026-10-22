@@ -1,0 +1,6 @@
+# Copy this file to ai_provider_keys.txt and put one key on each line.
+# The openai line is optional while openai_key.txt still has the OpenAI key.
+# Add a new provider with another name = key line.
+
+openai =
+grok =

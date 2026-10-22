@@ -8,6 +8,13 @@ CONF_DIR = "conf"
 DEFAULT_MODEL = "gpt-4.1-mini"
 MODEL_CONFIG_FILE = "openai_model.conf"
 XAI_BASE_URL = "https://api.x.ai/v1"
+# Rollback: set False to hide LM Studio. Change the address if the server uses another port.
+LMSTUDIO_ENABLED = True
+LMSTUDIO_BASE_URL = os.getenv("LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
+LMSTUDIO_MODEL_ID = "lmstudio"
+PROVIDER_KEYS_FILE = "ai_provider_keys.txt"
+# Rollback: set False to ignore ai_provider_keys.txt and use the old key files only.
+PROVIDER_KEYS_FILE_ENABLED = True
 # Rollback: set False to hide Grok and keep the picker on OpenAI only.
 GROK_MODELS_ENABLED = True
 # Rollback: set False to restore the long technical-expert system prompt.
@@ -35,6 +42,8 @@ _OPENAI_MODELS: List[Tuple[str, str]] = [
 AVAILABLE_MODELS: List[Tuple[str, str]] = (
     list(_OPENAI_MODELS) + _GROK_MODELS if GROK_MODELS_ENABLED else list(_OPENAI_MODELS)
 )
+if LMSTUDIO_ENABLED:
+    AVAILABLE_MODELS = AVAILABLE_MODELS + [("LM Studio", LMSTUDIO_MODEL_ID)]
 
 MODEL_ID_BY_LABEL = {label: model_id for label, model_id in AVAILABLE_MODELS}
 LABEL_BY_MODEL_ID = {model_id: label for label, model_id in AVAILABLE_MODELS}
@@ -47,9 +56,76 @@ def _env_bool(name: str, default: bool) -> bool:
     return value.lower() in ("1", "true", "yes", "on")
 
 
+def _load_provider_keys() -> Dict[str, str]:
+    """Read ai_provider_keys.txt. Blank lines and comments are ignored."""
+    if not PROVIDER_KEYS_FILE_ENABLED:
+        return {}
+    path = os.path.join(os.path.dirname(__file__), PROVIDER_KEYS_FILE)
+    if not os.path.exists(path):
+        return {}
+    found: Dict[str, str] = {}
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            for line in handle:
+                stripped = line.strip()
+                if not stripped or stripped.startswith("#") or "=" not in stripped:
+                    continue
+                name, value = (part.strip() for part in stripped.split("=", 1))
+                if name and value:
+                    found[name.lower()] = value
+    except OSError as exc:
+        print(f"Error reading {PROVIDER_KEYS_FILE}: {exc}")
+    if "xai" in found and "grok" not in found:
+        found["grok"] = found["xai"]
+    return found
+
+
 def is_grok_model(model: str) -> bool:
     """Grok is served by the xAI API, not the OpenAI key."""
     return (model or "").lower().startswith("grok-")
+
+
+def is_lmstudio_model(model: str) -> bool:
+    """LM Studio is the local server. The menu id is not the loaded model name."""
+    return LMSTUDIO_ENABLED and (model or "").lower() == LMSTUDIO_MODEL_ID
+
+
+def uses_chat_completions(model: str) -> bool:
+    """Grok and LM Studio do not speak the OpenAI Responses API."""
+    return is_grok_model(model) or is_lmstudio_model(model)
+
+
+def provider_label(model: str) -> str:
+    """Name shown while a request for this model is in flight."""
+    if is_lmstudio_model(model):
+        return "LM Studio"
+    return "Grok" if is_grok_model(model) else "OpenAI"
+
+
+def pick_loaded_lmstudio_model(models: list) -> Optional[str]:
+    """Choose a loaded chat model from LM Studio /api/v0/models."""
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        if item.get("state") != "loaded":
+            continue
+        if item.get("type") == "embeddings":
+            continue
+        model_id = item.get("id")
+        if model_id:
+            return str(model_id)
+    return None
+
+
+def pick_listed_lmstudio_model(models: list) -> Optional[str]:
+    """First id from the OpenAI-compatible /v1/models list."""
+    for item in models:
+        if not isinstance(item, dict):
+            continue
+        model_id = item.get("id")
+        if model_id:
+            return str(model_id)
+    return None
 
 
 def is_reasoning_model(model: str) -> bool:
@@ -134,11 +210,14 @@ class OpenAIConfig:
         "gpt-5.5": {"input": 5.00, "output": 30.00},
         "grok-4.3": {"input": 1.25, "output": 2.50},
         "grok-4.7": {"input": 2.00, "output": 6.00},
+        "lmstudio": {"input": 0.0, "output": 0.0},
     }
 
     def __init__(self):
-        self.api_key = self._get_api_key()
-        self.xai_api_key = self._get_named_key("XAI_API_KEY", "xai_key.txt")
+        self._provider_keys = _load_provider_keys()
+        self.api_key = self._provider_key("openai", "OPENAI_API_KEY", "openai_key.txt")
+        self.xai_api_key = self._provider_key("grok", "XAI_API_KEY", "xai_key.txt")
+        self.lmstudio_api_key = self._provider_key("lmstudio", "LMSTUDIO_API_KEY", "lmstudio_key.txt")
 
         self.model = resolve_startup_model()
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))
@@ -170,8 +249,12 @@ class OpenAIConfig:
             )
         self.direct_answers = DIRECT_ANSWERS
 
-    def _get_api_key(self) -> Optional[str]:
-        return self._get_named_key("OPENAI_API_KEY", "openai_key.txt")
+    def _provider_key(self, provider: str, env_name: str, legacy_file: str) -> Optional[str]:
+        if PROVIDER_KEYS_FILE_ENABLED:
+            value = self._provider_keys.get(provider)
+            if value:
+                return value
+        return self._get_named_key(env_name, legacy_file)
 
     def _get_named_key(self, env_name: str, filename: str) -> Optional[str]:
         api_key = os.getenv(env_name)
