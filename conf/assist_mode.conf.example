@@ -1,6 +1,8 @@
 # Assist controls. Transcription and voice can both be on.
 # vision is one of: off, window, screen
+# browser_control acts in an attached Edge or Chrome tab. It starts off.
 # Rollback for the whole feature is ASSIST_MODES_ENABLED in assist_mode.py.
 transcription = true
 voice = false
 vision = off
+browser_control = false

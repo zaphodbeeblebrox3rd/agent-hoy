@@ -9,7 +9,7 @@ A Python application that provides real-time speech transcription with interacti
 - **Topic Explanations**: Get summaries, technical challenges, and command examples for various tech topics
 - **Modern GUI**: Clean, responsive interface built with tkinter
 - **AI-Enhanced Analysis**: OpenAI integration with Responses API, streaming, and adaptive question types
-- Assist controls: Transcription and Voice checkboxes, plus Vision of Off, Window, or Screen
+- Assist controls: Transcription and Voice checkboxes, plus Vision of Off, Window, or Screen. Control browser starts off.
 - **Two install profiles**: Lite (small, online STT) and Full (offline Whisper)
 
 ## Installation
@@ -115,13 +115,19 @@ Set `OPENAI_API_KEY` for AI analysis. See [OPENAI_SETUP.md](OPENAI_SETUP.md) for
 
 ## Assist controls
 
-Transcription, Voice, and Vision can be used together. The live transcript is always written while listening. The Transcription checkbox is the previous keyword and question analysis. Voice speaks the short guide. Vision is Off, Window, or Screen, because one share source is active at a time. Window attaches the foreground window, or the last window that was in front of this app. Screen attaches the display under the pointer.
+Transcription, Voice, and Vision can be used together. The live transcript is always written while listening. The Transcription checkbox is the previous keyword and question analysis. Voice speaks a conversation with the assistant. When you say you, that means the assistant. Vision is Off, Window, or Screen, because one share source is active at a time. Window attaches the foreground window, or the last window that was in front of this app. Screen attaches the display under the pointer.
+
+Voice uses the marin voice and a conversational speaking style. Recent turns are sent with each new utterance. Durable facts can be saved in memory/agent_memory.md, which is gitignored and reloaded on the next turn. Memory lines and browser actions are removed before the reply is shown or spoken.
+
+When the shared window is Edge or Chrome, and that browser was started with a debugging port, the guide reads the full page text and a full-page image when the image fits the existing size rules. If the image is too large, the guide gets the page text and a note that the image was too large. If the browser was not started with a debugging port, the status line gives the one relaunch command. A browser that is already open cannot be attached. Other windows still use a screenshot.
+
+Control browser sits next to Vision and starts off. When it is on, the guide can click, type, press, scroll, and navigate in the attached tab.
 
 Screenshots are sent at the captured resolution. The image is shrunk only when the API would reject it, or when the file is still too large after a high-quality JPEG at the same pixel size. Voice pauses the microphone while the audio plays.
 
 On Linux with Wayland, capture goes through the desktop screenshot portal. Window asks that portal which window to share. macOS needs Screen Recording permission for the terminal that launched the app.
 
-Rollback: set `ASSIST_MODES_ENABLED` to `False` in `assist_mode.py`. The controls disappear and the app stays in transcription mode.
+Rollback: set `ASSIST_MODES_ENABLED` to `False` in `assist_mode.py`. The controls disappear and the app stays in transcription mode. Set `MEMORY_ENABLED` to `False` in `memory_store.py` to stop reading and writing memory without deleting the file. Set `BROWSER_CONTROL_ENABLED` to `False` in `browser_bridge.py` to remove the Control browser checkbox and browser actions. Voice rollback is `TTS_VOICE` and `TTS_INSTRUCTIONS` in `voice_output.py`.
 
 Important: `uv sync` without `--extra whisper` installs the Lite profile and removes Whisper. After `setup_uv.bat --full`, use `run.bat` or always sync with `--extra whisper`.
 
@@ -181,6 +187,7 @@ After setup on each platform:
 - [ ] Full: Whisper transcribes offline
 - [ ] AI analysis updates when keywords are spoken (with API key)
 - [ ] Transcription, Voice, and Vision can be enabled together
+- [ ] Control browser is present and off until checked
 - [ ] Window or Screen keeps a native-resolution screenshot in the request
 
 ## License

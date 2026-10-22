@@ -34,6 +34,7 @@ def test_rollback_defaults():
     assert defaults.transcription is True
     assert defaults.voice is False
     assert defaults.vision == VISION_OFF
+    assert defaults.browser_control is False
     assert speaks(defaults) is False
     assert captures(defaults) is False
     assert guide_active(defaults) is False
@@ -51,6 +52,9 @@ def test_persist_assist_mode(tmp_dir: str):
     save_assist_settings(AssistSettings(True, True, VISION_SCREEN), tmp_dir)
     loaded = load_assist_settings(tmp_dir)
     assert loaded == AssistSettings(True, True, VISION_SCREEN)
+    save_assist_settings(AssistSettings(True, False, VISION_OFF, True), tmp_dir)
+    with_control = load_assist_settings(tmp_dir)
+    assert with_control.browser_control is True
     with open(os.path.join(tmp_dir, "assist_mode.conf"), "w", encoding="utf-8") as handle:
         handle.write("mode = window\n")
     legacy = load_assist_settings(tmp_dir)
@@ -182,6 +186,222 @@ def test_live_screen_is_native():
     return True
 
 
+def test_analysis_history_continues_only_the_same_reply():
+    from main import analysis_continues
+
+    assert analysis_continues("Hello", "Hello there") is True
+    spoken = "Hello there, this is the spoken reply that should stay in the pane."
+    assert analysis_continues(spoken + "\nMEMORY:\n- Uses Edge", spoken) is True
+    assert analysis_continues(
+        "The shell notes stay on screen for later reading.",
+        "I need to see the latest line.",
+    ) is False
+    assert analysis_continues("Hello there", "He") is False
+    print("OK analysis history keeps a new reply")
+    return True
+
+
+def test_voice_is_conversational():
+    from voice_output import TTS_INSTRUCTIONS, TTS_VOICE
+
+    assert TTS_VOICE == "marin"
+    folded = TTS_INSTRUCTIONS.casefold()
+    assert "conversation" in folded
+    assert "announcer" in folded
+    print("OK marin voice")
+    return True
+
+
+def test_guide_is_a_conversation():
+    from assist_mode import build_guide_prompt, format_recent_turns, guide_instructions
+
+    quiet = guide_instructions(False, True)
+    assert "you, the assistant" in quiet
+    assert "not the assumed topic" in quiet
+    assert "MEMORY:" in quiet
+    assert "ACTIONS:" not in quiet
+    assert "Give only the next step" not in quiet
+    acting = guide_instructions(True, False)
+    assert "ACTIONS:" in acting
+    assert "MEMORY:" not in acting
+    history = format_recent_turns([("what can you do", "I can help with that.")])
+    prompt = build_guide_prompt(
+        "can you see this page",
+        "Attached chrome tab Example.",
+        history=history,
+        memory="- Uses Edge",
+        page_text="Hello from the page",
+    )
+    assert "Recent conversation:" in prompt
+    assert "what can you do" in prompt
+    assert "I can help with that." in prompt
+    assert "What the user just said:" in prompt
+    assert "can you see this page" in prompt
+    assert "What you remember:" in prompt
+    assert "Full page text:" in prompt
+    print("OK conversational guide")
+    return True
+
+
+def test_memory_and_action_blocks(tmp_dir: str):
+    import memory_store
+    from memory_store import load_memory, remember, split_guide_reply, visible_reply
+
+    reply = (
+        "I can see the sign-in page.\n"
+        "MEMORY:\n"
+        "- Uses Edge\n"
+        "- uses edge\n"
+        "ACTIONS:\n"
+        "click: Sign in\n"
+        "type: hello\n"
+    )
+    spoken, memories, actions = split_guide_reply(reply)
+    assert spoken == "I can see the sign-in page."
+    assert "MEMORY" not in spoken
+    assert "ACTIONS" not in spoken
+    assert memories == ["Uses Edge", "uses edge"]
+    assert actions[0] == ("click", "Sign in")
+    assert actions[1] == ("type", "hello")
+    assert visible_reply(reply) == spoken
+
+    memory_dir = os.path.join(tmp_dir, "memory")
+    remember(memories, memory_dir)
+    remember(["Uses Edge", "Lives in Chicago"], memory_dir)
+    stored = load_memory(memory_dir)
+    assert stored.count("Uses Edge") == 1
+    assert "Lives in Chicago" in stored
+    many = [f"fact {index}" for index in range(memory_store.MAX_MEMORY_LINES + 5)]
+    remember(many, memory_dir)
+    capped = load_memory(memory_dir)
+    assert "fact 0" not in capped
+    assert f"fact {memory_store.MAX_MEMORY_LINES + 4}" in capped
+
+    previous = memory_store.MEMORY_ENABLED
+    memory_store.MEMORY_ENABLED = False
+    try:
+        disabled_dir = os.path.join(tmp_dir, "memory-off")
+        remember(["should not write"], disabled_dir)
+        assert load_memory(disabled_dir) == ""
+        assert load_memory(memory_dir) == ""
+        assert not os.path.exists(os.path.join(disabled_dir, "agent_memory.md"))
+    finally:
+        memory_store.MEMORY_ENABLED = previous
+    print("OK memory file and hidden blocks")
+    return True
+
+
+def test_browser_matching_and_actions():
+    import os as _os
+
+    from browser_bridge import (
+        CdpError,
+        CdpSession,
+        browser_actions_allowed,
+        debugging_status,
+        look_at_browser,
+        page_image_for_prompt,
+        relaunch_command,
+        titles_match,
+    )
+    from image_payload import prepare_rgb
+
+    assert titles_match("Example Domain - Google Chrome", "Example Domain")
+    assert titles_match("Example Domain - Personal - Microsoft Edge", "Example Domain")
+    assert titles_match("Inbox and 2 more pages - Google Chrome", "Inbox")
+    assert not titles_match("Inbox - Google Chrome", "Other page")
+    command = relaunch_command(
+        r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+        "chrome",
+    )
+    assert "--remote-debugging-port=9222" in command
+    assert "chrome.exe" in command
+    status = debugging_status("edge", command)
+    assert "without a debugging port" in status
+    assert command in status
+    assert look_at_browser(None, "gpt-4.1-mini") is None
+    assert browser_actions_allowed(False) is False
+    assert browser_actions_allowed(True) is True
+
+    rgb = _os.urandom(80 * 60 * 3)
+    shrunk = prepare_rgb(rgb, 80, 60, "gpt-4o", max_encoded_bytes=1)
+    assert shrunk.resized is True
+    kept, too_large = page_image_for_prompt(shrunk)
+    assert kept is None and too_large is True
+
+    try:
+        CdpSession("ws://example.com/devtools/page/1", timeout=1)
+        raise AssertionError("non-local debugging socket was accepted")
+    except CdpError as exc:
+        assert "not local" in str(exc)
+    print("OK browser title match and relaunch command")
+    return True
+
+
+def test_cdp_call_roundtrip():
+    import base64
+    import hashlib
+    import json
+    import socket
+    import threading
+
+    from browser_bridge import WEBSOCKET_GUID, CdpSession
+
+    ready = threading.Event()
+    holder = {}
+
+    def serve():
+        server = socket.socket()
+        server.bind(("127.0.0.1", 0))
+        server.listen(1)
+        holder["server"] = server
+        holder["port"] = server.getsockname()[1]
+        ready.set()
+        conn, _addr = server.accept()
+        try:
+            data = b""
+            while b"\r\n\r\n" not in data:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    return
+                data += chunk
+            key = ""
+            for line in data.decode("iso-8859-1").split("\r\n"):
+                if line.lower().startswith("sec-websocket-key:"):
+                    key = line.split(":", 1)[1].strip()
+            accept = base64.b64encode(
+                hashlib.sha1((key + WEBSOCKET_GUID).encode("ascii")).digest()
+            ).decode("ascii")
+            conn.sendall(
+                (
+                    "HTTP/1.1 101 Switching Protocols\r\n"
+                    "Upgrade: websocket\r\n"
+                    "Connection: Upgrade\r\n"
+                    f"Sec-WebSocket-Accept: {accept}\r\n"
+                    "\r\n"
+                ).encode("ascii")
+            )
+            frame = b""
+            while len(frame) < 6:
+                chunk = conn.recv(4096)
+                if not chunk:
+                    return
+                frame += chunk
+            payload = json.dumps({"id": 1, "result": {"ok": True}}).encode("utf-8")
+            conn.sendall(bytes([0x81, len(payload)]) + payload)
+        finally:
+            conn.close()
+            server.close()
+
+    threading.Thread(target=serve, daemon=True).start()
+    assert ready.wait(2)
+    with CdpSession(f"ws://127.0.0.1:{holder['port']}/devtools/page/1", timeout=3) as session:
+        result = session.call("Runtime.evaluate", {"expression": "1"})
+    assert result["ok"] is True
+    print("OK local debugging call")
+    return True
+
+
 def main():
     tmp_dir = os.path.join(os.path.dirname(__file__), "cache", "assist-mode-test")
     os.makedirs(tmp_dir, exist_ok=True)
@@ -192,6 +412,12 @@ def main():
         test_prepare_keeps_png_bytes(),
         test_byte_cap_recompresses_before_resize(),
         test_voice_text_cleanup(),
+        test_analysis_history_continues_only_the_same_reply(),
+        test_voice_is_conversational(),
+        test_guide_is_a_conversation(),
+        test_memory_and_action_blocks(tmp_dir),
+        test_browser_matching_and_actions(),
+        test_cdp_call_roundtrip(),
         test_guide_request_keeps_full_image(),
         test_backend_names(),
         test_clamp_region(),

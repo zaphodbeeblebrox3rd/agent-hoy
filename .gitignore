@@ -1,6 +1,8 @@
 # Project-specific files
 cache/
 openai_key.txt
+# Live assistant memory
+memory/
 # Local config overrides (shipped defaults are conf/*.conf.example)
 conf/*.conf
 .install-profile

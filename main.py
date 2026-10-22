@@ -25,17 +25,27 @@ from datetime import datetime, timedelta
 
 from assist_mode import (
     ASSIST_MODES_ENABLED,
+    DIALOGUE_TURNS,
     GUIDE_TRANSCRIPT_CHARS,
     VISION_CHOICES,
     VISION_OFF,
     VISION_SCREEN,
     AssistSettings,
     captures,
+    format_recent_turns,
     guide_active,
+    guide_instructions,
     load_assist_settings,
     save_assist_settings,
     speaks,
 )
+from browser_bridge import (
+    BROWSER_CONTROL_ENABLED,
+    browser_actions_allowed,
+    look_at_browser,
+    run_actions,
+)
+from memory_store import MEMORY_ENABLED, load_memory, remember, split_guide_reply, visible_reply
 from config_loader import (
     load_question_patterns,
     load_question_type_patterns,
@@ -59,6 +69,28 @@ from transcription_config import (
     is_cuda_available,
     should_prefer_whisper,
 )
+
+# Rollback: set False to leave the reader parked instead of following new text.
+LIVE_SCROLL_DEFAULT = True
+
+
+def analysis_continues(previous: str, current: str) -> bool:
+    """True when current is the same answer growing, not a new one.
+
+    Streaming sends a longer copy of the same reply. A later utterance must
+    be kept below it instead of replacing it.
+    """
+    previous_text = (previous or "").strip()
+    current_text = (current or "").strip()
+    if not previous_text or not current_text:
+        return False
+    if current_text == previous_text or current_text.startswith(previous_text):
+        return True
+    shorter_tail = previous_text.startswith(current_text) and len(current_text) >= max(
+        40, int(len(previous_text) * 0.5)
+    )
+    return shorter_tail
+
 
 # OpenAI integration
 from image_payload import prepare_encoded
@@ -160,6 +192,8 @@ class SpeechTranscriptionApp:
         self._speech_generation = 0
         self._resume_after_speech = False
         self._guide_cursor = 0
+        self._dialogue = []
+        self._dialogue_lock = threading.Lock()
         self._shared_window_id = None
         self._guide_exclude_id = None
         self._guide_logical_screen = None
@@ -271,6 +305,9 @@ class SpeechTranscriptionApp:
         self.transcription_assist = tk.BooleanVar(value=settings.transcription)
         self.voice_assist = tk.BooleanVar(value=settings.voice)
         self.vision_mode = tk.StringVar(value=settings.vision)
+        self.browser_control = tk.BooleanVar(
+            value=settings.browser_control and BROWSER_CONTROL_ENABLED
+        )
         if ASSIST_MODES_ENABLED:
             mode_row = ttk.Frame(control_frame)
             mode_row.pack(fill=tk.X, pady=(0, 5))
@@ -295,6 +332,13 @@ class SpeechTranscriptionApp:
                     variable=self.vision_mode,
                     command=self.on_assist_changed,
                 ).pack(side=tk.LEFT, padx=(0, 12))
+            if BROWSER_CONTROL_ENABLED:
+                ttk.Checkbutton(
+                    mode_row,
+                    text="Control browser",
+                    variable=self.browser_control,
+                    command=self.on_assist_changed,
+                ).pack(side=tk.LEFT, padx=(4, 0))
 
         # Second row - Status labels and settings
         bottom_row = ttk.Frame(control_frame)
@@ -316,6 +360,15 @@ class SpeechTranscriptionApp:
             command=self.on_ai_toggle
         )
         self.ai_checkbox.pack(side=tk.LEFT, padx=(0, 20))
+
+        self.live_scroll = tk.BooleanVar(value=LIVE_SCROLL_DEFAULT)
+        self.live_scroll_button = ttk.Checkbutton(
+            bottom_row,
+            text="Live scroll",
+            variable=self.live_scroll,
+            command=self.on_live_scroll_toggled,
+        )
+        self.live_scroll_button.pack(side=tk.LEFT, padx=(0, 20))
         
         # OpenAI status indicator
         self.openai_status_label = ttk.Label(bottom_row, text=self._openai_status_text())
@@ -395,6 +448,8 @@ class SpeechTranscriptionApp:
             state=tk.DISABLED
         )
         self.topic_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        for pane in (self.transcription_text, self.ai_text, self.topic_text):
+            self._bind_scroll_wheel(pane)
         
         # Bind click events to transcription text
         self.transcription_text.bind("<Button-1>", self.on_text_click)
@@ -529,12 +584,15 @@ class SpeechTranscriptionApp:
         self.status_label.config(text="Status: Stopped")
         print("Stopped listening for speech")
     
-    def _make_ai_stream_callback(self, source="analysis"):
+    def _make_ai_stream_callback(self, source="analysis", hide_blocks=False):
         """Return a callback that streams partial AI text to the UI thread."""
         def callback(partial_text):
+            content = visible_reply(partial_text) if hide_blocks else partial_text
+            if hide_blocks and not str(content).strip():
+                return
             self.root.after(
                 0,
-                lambda content=partial_text, section=source: self.show_ai_analysis(
+                lambda content=content, section=source: self.show_ai_analysis(
                     content, source=section
                 ),
             )
@@ -961,7 +1019,7 @@ class SpeechTranscriptionApp:
         
         # Insert at end and scroll to bottom
         self.transcription_text.insert(tk.END, formatted_text)
-        self.transcription_text.see(tk.END)
+        self._follow_live(self.transcription_text)
         
         # Check for questions and provide troubleshooting suggestions
         # Run this asynchronously to not block transcription
@@ -1193,15 +1251,21 @@ class SpeechTranscriptionApp:
             labels.append("Voice")
         if settings.vision != VISION_OFF:
             labels.append(settings.vision.title())
+        if settings.browser_control:
+            labels.append("Control browser")
         self.update_ai_status("Assist: " + (", ".join(labels) if labels else "Off"))
 
     def _current_assist(self) -> AssistSettings:
         if not ASSIST_MODES_ENABLED or not hasattr(self, "voice_assist"):
             return AssistSettings()
+        browser_control = False
+        if BROWSER_CONTROL_ENABLED and hasattr(self, "browser_control"):
+            browser_control = bool(self.browser_control.get())
         return AssistSettings(
             bool(self.transcription_assist.get()),
             bool(self.voice_assist.get()),
             self.vision_mode.get(),
+            browser_control,
         )
 
     def _on_app_focus_out(self, event):
@@ -1218,7 +1282,7 @@ class SpeechTranscriptionApp:
             self._shared_window_id = foreign
 
     def _run_guide_turn(self, snapshot: str):
-        """Look at the latest speech, optionally the screen, then speak one step."""
+        """Talk with the user, using memory, recent turns, and the shared page."""
         acquired = False
         try:
             settings = getattr(self, "_scheduled_settings", AssistSettings())
@@ -1250,36 +1314,58 @@ class SpeechTranscriptionApp:
                 acquired = True
 
             self.last_guide_time = current_time
-            prior = snapshot[: self._guide_cursor][-GUIDE_TRANSCRIPT_CHARS:]
             recent = new_text[-GUIDE_TRANSCRIPT_CHARS:]
-            if prior.strip():
-                transcript = f"Earlier:\n{prior.strip()}\n\nJust now:\n{recent}"
-            else:
-                transcript = recent
+            with self._dialogue_lock:
+                history = format_recent_turns(self._dialogue)
+            memory_text = load_memory()
+            allow_actions = browser_actions_allowed(settings.browser_control)
 
             image = None
-            capture_note = "No screenshot. Voice only."
+            page = None
+            page_text = ""
+            capture_note = "No screenshot. Voice only. No browser tab is attached."
             if captures(settings):
                 self.root.after(0, lambda: self.update_ai_status("Capturing..."))
-                captured = self._capture_for_guide(settings.vision)
-                if captured.png_bytes:
-                    prepared = prepare_encoded(captured.png_bytes, openai_config.model)
-                    image = (prepared.data, prepared.mime, prepared.detail)
-                    resolution = (
-                        "resized to fit the API limit" if prepared.resized else "original resolution"
-                    )
-                    capture_note = (
-                        f"{captured.label}, {prepared.width}x{prepared.height}, {resolution}."
-                    )
-                    if captured.window_id:
-                        self._shared_window_id = captured.window_id
-                    print(
-                        f"Captured {captured.label} {prepared.width}x{prepared.height} "
-                        f"resized={prepared.resized} detail={prepared.detail}"
-                    )
-                else:
-                    capture_note = f"No screenshot ({captured.error or 'capture failed'})."
+                page = self._page_for_guide(settings.vision, openai_config.model)
+                if page and page.attached:
+                    page_text = page.text
+                    capture_note = page.status
+                    if page.prepared is not None:
+                        image = (page.prepared.data, page.prepared.mime, page.prepared.detail)
                     print(capture_note)
+                else:
+                    if page and page.status:
+                        status_message = page.status
+                        self.root.after(
+                            0,
+                            lambda message=status_message: self.update_ai_status(message),
+                        )
+                        print(status_message)
+                    captured = self._capture_for_guide(settings.vision)
+                    if captured.png_bytes:
+                        prepared = prepare_encoded(captured.png_bytes, openai_config.model)
+                        image = (prepared.data, prepared.mime, prepared.detail)
+                        resolution = (
+                            "resized to fit the API limit"
+                            if prepared.resized
+                            else "original resolution"
+                        )
+                        capture_note = (
+                            f"{captured.label}, {prepared.width}x{prepared.height}, {resolution}."
+                        )
+                        if captured.window_id:
+                            self._shared_window_id = captured.window_id
+                        print(
+                            f"Captured {captured.label} {prepared.width}x{prepared.height} "
+                            f"resized={prepared.resized} detail={prepared.detail}"
+                        )
+                    else:
+                        capture_note = f"No screenshot ({captured.error or 'capture failed'})."
+                        print(capture_note)
+                    if page and page.status:
+                        capture_note = f"{capture_note} {page.status}"
+                    else:
+                        capture_note = f"{capture_note} No browser tab is attached."
 
             if not (OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available()):
                 self.root.after(
@@ -1292,23 +1378,57 @@ class SpeechTranscriptionApp:
 
             self.root.after(0, lambda: self.update_ai_status("Calling OpenAI..."))
             ai_content, cost = openai_analyzer.generate_screen_guide(
-                transcript,
+                recent,
                 capture_note,
                 image=image,
-                stream_callback=self._make_ai_stream_callback(source="guide"),
+                stream_callback=self._make_ai_stream_callback(source="guide", hide_blocks=True),
+                history=history,
+                memory=memory_text,
+                page_text=page_text,
+                instructions=guide_instructions(allow_actions, MEMORY_ENABLED),
             )
+            spoken, memories, actions = split_guide_reply(ai_content)
+            try:
+                remember(memories)
+            except OSError as exc:
+                print(f"Could not save memory: {exc}")
+
+            action_note = ""
+            if allow_actions and actions:
+                if page and page.attached and page.websocket_url:
+                    try:
+                        action_note = run_actions(page.websocket_url, actions)
+                    except Exception as exc:
+                        action_note = f"Browser action failed: {exc}"
+                        print(action_note)
+                else:
+                    action_note = "Browser actions were not run because no page is attached."
+                    if page and page.status:
+                        action_note = f"{action_note} {page.status}"
+
+            with self._dialogue_lock:
+                self._dialogue.append((recent, spoken))
+                self._dialogue = self._dialogue[-DIALOGUE_TURNS:]
+
             self._guide_cursor = len(snapshot)
             if cost > 0:
                 self.root.after(0, lambda amount=cost: self.add_to_session_cost(amount))
                 self.root.after(0, self.increment_api_counter)
-            self.root.after(0, lambda: self.update_ai_status("Completed"))
+            if action_note:
+                final_status = action_note
+            elif page and not page.attached and page.status:
+                final_status = page.status
+            else:
+                final_status = "Completed"
+            self.root.after(0, lambda message=final_status: self.update_ai_status(message))
             speak_reply = speaks(settings)
-            self.root.after(
-                0,
-                lambda content=ai_content, speak_reply=speak_reply: self.show_ai_analysis(
-                    content, speak=speak_reply, source="guide"
-                ),
-            )
+            if spoken:
+                self.root.after(
+                    0,
+                    lambda content=spoken, speak_reply=speak_reply: self.show_ai_analysis(
+                        content, speak=speak_reply, source="guide"
+                    ),
+                )
         except Exception as exc:
             print(f"Guide turn failed: {exc}")
             self.root.after(0, lambda: self.update_ai_status("Error"))
@@ -1332,6 +1452,14 @@ class SpeechTranscriptionApp:
                     args=(buffered,),
                     daemon=True,
                 ).start()
+
+    def _page_for_guide(self, _vision: str, model: str):
+        """Attach when the shared window is Edge or Chrome. Other windows stay screenshots."""
+        window_id = self._shared_window_id or foreign_window_id(self._guide_exclude_id)
+        if not window_id:
+            return None
+        self._shared_window_id = window_id
+        return look_at_browser(int(window_id), model)
 
     def _capture_for_guide(self, vision: str):
         share_mode = "screen" if vision == VISION_SCREEN else "window"
@@ -1410,31 +1538,78 @@ class SpeechTranscriptionApp:
             self.pause_button.config(text="Pause Listening", state=tk.NORMAL)
             self.status_label.config(text="Status: Listening...")
     
-    def show_ai_analysis(self, content, speak=False, source="analysis"):
-        """Display AI-driven analysis in the AI pane.
+    def on_live_scroll_toggled(self):
+        """Follow the newest text when Live scroll is turned on."""
+        if self.live_scroll.get():
+            self._follow_live(self.transcription_text)
+            self._follow_live(self.ai_text)
+            self._follow_live(self.topic_text)
 
-        Guide text and the original analysis stay in separate sections so
-        turning both on does not erase one with the other.
+    def _follow_live(self, widget):
+        if getattr(self, "live_scroll", None) is not None and self.live_scroll.get():
+            widget.see(tk.END)
+
+    def _bind_scroll_wheel(self, widget):
+        """Scroll a pane from the wheel even when the text is read-only."""
+        def on_wheel(event, target=widget):
+            delta = getattr(event, "delta", 0)
+            if delta:
+                steps = int(-delta / 120)
+                if steps == 0:
+                    steps = -1 if delta > 0 else 1
+                target.yview_scroll(steps, "units")
+            elif getattr(event, "num", None) == 4:
+                target.yview_scroll(-1, "units")
+            elif getattr(event, "num", None) == 5:
+                target.yview_scroll(1, "units")
+            return "break"
+
+        widget.bind("<MouseWheel>", on_wheel)
+        widget.bind("<Button-4>", on_wheel)
+        widget.bind("<Button-5>", on_wheel)
+
+    def show_ai_analysis(self, content, speak=False, source="analysis"):
+        """Append AI output. A streaming update replaces only its own block.
+
+        Older answers stay in the pane. Live scroll follows the end when enabled.
         """
         try:
             if not hasattr(self, "_ai_sections"):
                 self._ai_sections = {"guide": "", "analysis": ""}
             if source not in self._ai_sections:
                 source = "analysis"
-            self._ai_sections[source] = content or ""
-            parts = []
-            if self._ai_sections["guide"]:
-                parts.append(self._ai_sections["guide"])
-            if self._ai_sections["analysis"]:
-                parts.append(self._ai_sections["analysis"])
-            combined = "\n\n".join(parts)
+            incoming = content or ""
+            previous = self._ai_sections.get(source, "")
+            self._ai_sections[source] = incoming
+            if not incoming.strip():
+                return
+
             self.ai_text.config(state=tk.NORMAL)
-            self.ai_text.delete("1.0", tk.END)
-            self.ai_text.insert("1.0", combined)
+            start_mark = f"{source}_live_start"
+            end_mark = f"{source}_live_end"
+            same_block = analysis_continues(previous, incoming) and start_mark in self.ai_text.mark_names()
+            if same_block:
+                self.ai_text.delete(start_mark, end_mark)
+                self.ai_text.insert(start_mark, incoming)
+                self.ai_text.mark_set(end_mark, f"{start_mark}+{len(incoming)}c")
+                self.ai_text.mark_gravity(end_mark, tk.LEFT)
+            else:
+                # end-1c is the last real insert point. end itself sits past the
+                # newline the text widget always keeps, so marks there do not
+                # surround the body.
+                if self.ai_text.index("end-1c") != "1.0":
+                    self.ai_text.insert("end-1c", "\n\n")
+                label = "Guide" if source == "guide" else "Analysis"
+                self.ai_text.insert("end-1c", f"[{time.strftime('%H:%M:%S')}] {label}\n")
+                self.ai_text.mark_set(start_mark, "end-1c")
+                self.ai_text.mark_gravity(start_mark, tk.LEFT)
+                self.ai_text.insert(start_mark, incoming)
+                self.ai_text.mark_set(end_mark, f"{start_mark}+{len(incoming)}c")
+                self.ai_text.mark_gravity(end_mark, tk.LEFT)
             self.ai_text.config(state=tk.DISABLED)
-            self.ai_text.see(tk.END)
+            self._follow_live(self.ai_text)
             if speak and speaks(self._current_assist()):
-                self._start_speech(content)
+                self._start_speech(incoming)
         except Exception as e:
             print(f"Error displaying AI analysis: {e}")
     
@@ -2372,7 +2547,12 @@ class SpeechTranscriptionApp:
         
         self.current_transcription = ""
         self._guide_cursor = 0
+        with self._dialogue_lock:
+            self._dialogue = []
         self._ai_sections = {"guide": "", "analysis": ""}
+        for mark in list(self.ai_text.mark_names()):
+            if mark.endswith("_live_start") or mark.endswith("_live_end"):
+                self.ai_text.mark_unset(mark)
         
         # Reset analyzed keywords to allow fresh analysis
         self.analyzed_keywords.clear()

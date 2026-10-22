@@ -11,7 +11,7 @@ from typing import Callable, Optional
 
 import openai
 
-from assist_mode import GUIDE_INSTRUCTIONS, GUIDE_MAX_OUTPUT_TOKENS
+from assist_mode import GUIDE_INSTRUCTIONS, GUIDE_MAX_OUTPUT_TOKENS, build_guide_prompt
 from openai_config import openai_config
 
 
@@ -319,22 +319,29 @@ class OpenAIAnalyzer:
         capture_note: str,
         image: Optional[tuple] = None,
         stream_callback: Optional[Callable[[str], None]] = None,
+        history: str = "",
+        memory: str = "",
+        page_text: str = "",
+        instructions: Optional[str] = None,
     ) -> tuple[str, float]:
-        """One spoken walkthrough step. image is (bytes, mime, detail) or None."""
+        """Conversational reply. image is (bytes, mime, detail) or None."""
         if not self.is_available():
             return "OpenAI is not configured. Voice and vision need an API key.", 0.0
 
-        prompt = (
-            "What the user just said:\n"
-            f"{transcript}\n\n"
-            f"Capture: {capture_note}\n"
+        guide_text = instructions or GUIDE_INSTRUCTIONS
+        prompt = build_guide_prompt(
+            transcript,
+            capture_note,
+            history=history,
+            memory=memory,
+            page_text=page_text,
         )
         text, cost = self._make_api_call(
             prompt,
             "guide",
             stream_callback,
             image=image,
-            instructions=GUIDE_INSTRUCTIONS,
+            instructions=guide_text,
             max_output_tokens=GUIDE_MAX_OUTPUT_TOKENS,
             use_cache=False,
             use_fallback=False,
@@ -347,7 +354,7 @@ class OpenAIAnalyzer:
                 "guide-retry",
                 stream_callback,
                 image=retry_image,
-                instructions=GUIDE_INSTRUCTIONS,
+                instructions=guide_text,
                 max_output_tokens=GUIDE_MAX_OUTPUT_TOKENS,
                 use_cache=False,
                 use_fallback=False,

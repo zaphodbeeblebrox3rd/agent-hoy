@@ -21,19 +21,78 @@ VISION_CHOICES = (
 DEFAULT_TRANSCRIPTION = True
 DEFAULT_VOICE = False
 DEFAULT_VISION = VISION_OFF
+DEFAULT_BROWSER_CONTROL = False
 
-GUIDE_INSTRUCTIONS = (
-    "You guide a person who is looking at their own computer. "
-    "The reply will be read aloud, so use short spoken sentences. "
-    "Give only the next step. Name the control you can see. "
-    "Then stop and wait for them to do it. "
-    "You cannot click, type, or move the pointer. "
-    "If a screenshot is included, base the step on what is visible. "
-    "If capture failed, say so in one sentence and answer from their words."
-)
-
-GUIDE_MAX_OUTPUT_TOKENS = 400
+GUIDE_MAX_OUTPUT_TOKENS = 800
 GUIDE_TRANSCRIPT_CHARS = 2000
+DIALOGUE_TURNS = 6
+
+
+def guide_instructions(browser_control: bool = False, memory: bool = True) -> str:
+    """Spoken guide. You means the assistant. IT help is available, not assumed."""
+    text = (
+        "You are the assistant speaking with the person at this computer. "
+        "When they say you, they mean you, the assistant. "
+        "Reply as yourself in a conversation, in natural sentences that can be read aloud. "
+        "Do not use a troubleshooting template, a numbered procedure, or a ticket format unless they ask for steps. "
+        "Help with any subject. Technical troubleshooting is available when that is what they want. It is not the assumed topic. "
+        "Use the recent conversation, what you remember, and the page or screenshot when those are present. "
+        "If a screenshot or page is missing, say so in one sentence and answer from their words."
+    )
+    if memory:
+        text += (
+            " If you learn a durable fact about this person or how they like to work, end with a MEMORY: section. "
+            "Put one fact on each following line. Never say MEMORY out loud."
+        )
+    if browser_control:
+        text += (
+            " You can operate an attached Edge or Chrome page. "
+            "Only include an ACTIONS: section when the capture says a browser tab is attached and an action would help. "
+            "One action per line, using click, type, press, scroll, or navigate. "
+            "click takes the visible label, type takes the text to put in the focused field, "
+            "press takes the key, scroll takes up or down, and navigate takes an http or https address. "
+            "Never say ACTIONS out loud."
+        )
+    else:
+        text += " You cannot click, type, or move the pointer. Tell them what you see and what they can do."
+    return text
+
+
+GUIDE_INSTRUCTIONS = guide_instructions(False, True)
+
+
+def build_guide_prompt(
+    transcript: str,
+    capture_note: str,
+    history: str = "",
+    memory: str = "",
+    page_text: str = "",
+) -> str:
+    """New utterance plus recent turns, memory, and the full page when we have it."""
+    parts = []
+    if history.strip():
+        parts.append("Recent conversation:\n" + history.strip())
+    parts.append("What the user just said:\n" + (transcript or "").strip())
+    if memory.strip():
+        parts.append("What you remember:\n" + memory.strip())
+    if page_text.strip():
+        parts.append("Full page text:\n" + page_text.strip())
+    parts.append("Capture:\n" + (capture_note or "").strip())
+    return "\n\n".join(parts) + "\n"
+
+
+def format_recent_turns(turns: list[tuple[str, str]]) -> str:
+    """What the user said and what the assistant replied, oldest first."""
+    lines = []
+    for user_text, assistant_text in list(turns)[-DIALOGUE_TURNS:]:
+        user_clip = (user_text or "").strip()[-GUIDE_TRANSCRIPT_CHARS:]
+        assistant_clip = (assistant_text or "").strip()[-GUIDE_TRANSCRIPT_CHARS:]
+        if user_clip:
+            lines.append(f"User: {user_clip}")
+        if assistant_clip:
+            lines.append(f"Assistant: {assistant_clip}")
+    return "\n".join(lines)
+
 
 CONF_DIR = "conf"
 ASSIST_MODE_FILE = "assist_mode.conf"
@@ -44,6 +103,7 @@ class AssistSettings:
     transcription: bool = DEFAULT_TRANSCRIPTION
     voice: bool = DEFAULT_VOICE
     vision: str = DEFAULT_VISION
+    browser_control: bool = DEFAULT_BROWSER_CONTROL
 
 
 def speaks(settings: AssistSettings) -> bool:
@@ -87,6 +147,7 @@ def load_assist_settings(conf_dir: str = CONF_DIR) -> AssistSettings:
     transcription = DEFAULT_TRANSCRIPTION
     voice = DEFAULT_VOICE
     vision = DEFAULT_VISION
+    browser_control = DEFAULT_BROWSER_CONTROL
     legacy_mode = None
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -102,6 +163,8 @@ def load_assist_settings(conf_dir: str = CONF_DIR) -> AssistSettings:
                     voice = _parse_bool(value)
                 elif key == "vision":
                     vision = normalize_vision(value)
+                elif key == "browser_control":
+                    browser_control = _parse_bool(value)
                 elif key == "mode":
                     legacy_mode = value
     except OSError as exc:
@@ -111,7 +174,12 @@ def load_assist_settings(conf_dir: str = CONF_DIR) -> AssistSettings:
     if legacy_mode and "transcription" not in _keys_in(path):
         transcription, voice, vision = _from_legacy_mode(legacy_mode)
 
-    return AssistSettings(transcription, voice, normalize_vision(vision))
+    return AssistSettings(
+        transcription,
+        voice,
+        normalize_vision(vision),
+        browser_control,
+    )
 
 
 def _keys_in(path: str) -> set[str]:
@@ -149,12 +217,15 @@ def save_assist_settings(settings: AssistSettings, conf_dir: str = CONF_DIR) -> 
     transcription = "true" if settings.transcription else "false"
     voice = "true" if settings.voice else "false"
     vision = normalize_vision(settings.vision)
+    browser_control = "true" if settings.browser_control else "false"
     try:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("# Assist controls. Transcription and voice can both be on.\n")
             handle.write("# vision is one of: off, window, screen\n")
+            handle.write("# browser_control acts in an attached Edge or Chrome tab\n")
             handle.write(f"transcription = {transcription}\n")
             handle.write(f"voice = {voice}\n")
             handle.write(f"vision = {vision}\n")
+            handle.write(f"browser_control = {browser_control}\n")
     except OSError as exc:
         print(f"Error saving assist settings to {path}: {exc}")

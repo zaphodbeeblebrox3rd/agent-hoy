@@ -5,7 +5,13 @@ import re
 import wave
 
 TTS_MODEL = "gpt-4o-mini-tts"
-TTS_VOICE = "coral"
+# Rollback: change these two constants. coral is the previous flat voice.
+TTS_VOICE = "marin"
+TTS_INSTRUCTIONS = (
+    "Speak as a calm, intelligent person in a real conversation. "
+    "Use a natural pace and ordinary intonation. "
+    "Sound attentive and clear, not like an announcer or a character."
+)
 MAX_SPOKEN_CHARS = 1200
 
 
@@ -33,6 +39,7 @@ def synthesize_speech(client, text: str) -> bytes:
         model=TTS_MODEL,
         voice=TTS_VOICE,
         input=spoken,
+        instructions=TTS_INSTRUCTIONS,
         response_format="wav",
     )
     return response.read()
