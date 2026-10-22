@@ -55,6 +55,17 @@ def capture_frame(
         return CaptureResult(None, 0, 0, "", str(exc))
 
 
+def capture_window_by_id(window_id: int) -> CaptureResult:
+    """Capture one window, including this app. Used to record a training outcome."""
+    try:
+        if sys.platform == "win32":
+            hwnd = _windows_root(int(window_id))
+            return _capture_hwnd(hwnd)
+        return _capture_screen()
+    except Exception as exc:
+        return CaptureResult(None, 0, 0, "", str(exc))
+
+
 def foreign_window_id(exclude_window_id: int | None) -> int | None:
     """Foreground window that is not this app, when the platform can see it."""
     try:
@@ -250,9 +261,7 @@ def _windows_title(hwnd: int) -> str:
 
 
 def _windows_window(exclude_window_id: int | None, preferred_window_id: int | None) -> CaptureResult:
-    import ctypes
-
-    user32, wintypes = _windows_user32()
+    user32, _wintypes = _windows_user32()
     hwnd = _windows_foreign_hwnd(exclude_window_id)
     if hwnd is None and preferred_window_id and user32.IsWindow(preferred_window_id):
         if not user32.IsIconic(preferred_window_id):
@@ -263,8 +272,15 @@ def _windows_window(exclude_window_id: int | None, preferred_window_id: int | No
             screen.label = "Screen (no other window was in front)"
         return screen
 
+    return _capture_hwnd(hwnd)
+
+
+def _capture_hwnd(hwnd: int) -> CaptureResult:
+    import ctypes
+
+    user32, wintypes = _windows_user32()
     rect = wintypes.RECT()
-    if not user32.GetWindowRect(hwnd, ctypes.byref(rect)):
+    if not user32.GetWindowRect(int(hwnd), ctypes.byref(rect)):
         return CaptureResult(None, 0, 0, "", "Could not read the window bounds")
 
     import mss
@@ -277,8 +293,8 @@ def _windows_window(exclude_window_id: int | None, preferred_window_id: int | No
     height = int((rect.bottom - rect.top) * scale)
     captured = _region_png(left, top, width, height)
     if captured.png_bytes:
-        captured.label = _windows_title(hwnd)
-        captured.window_id = hwnd
+        captured.label = _windows_title(int(hwnd))
+        captured.window_id = int(hwnd)
     return captured
 
 
