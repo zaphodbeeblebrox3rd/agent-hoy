@@ -18,6 +18,15 @@ from dataclasses import dataclass
 from image_payload import MAX_ENCODED_BYTES, PreparedImage, prepare_encoded
 
 BROWSER_CONTROL_ENABLED = True
+# Rollback: set False to ignore choose. Other browser actions stay.
+CHOOSE_ENABLED = True
+_BLOCKED_ACTIONS = (
+    "submit",
+    "check my work",
+    "save & exit",
+    "save and exit",
+    "exit assignment",
+)
 DEBUG_PORT = 9222
 PAGE_TEXT_CHARS = 20_000
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -54,6 +63,29 @@ class PageView:
 def browser_actions_allowed(browser_control: bool) -> bool:
     """Actions run only when the feature is on and the checkbox is checked."""
     return BROWSER_CONTROL_ENABLED and bool(browser_control)
+
+
+def action_is_blocked(text: str) -> bool:
+    """True for submit, check my work, save and exit, and exit assignment."""
+    folded = " ".join((text or "").casefold().split())
+    if not folded:
+        return False
+    return any(phrase in folded for phrase in _BLOCKED_ACTIONS)
+
+
+def parse_choose(argument: str) -> tuple[str, str] | None:
+    """Return the sentence anchor and the answer. None when the words are refused."""
+    text = " ".join((argument or "").split()).strip()
+    if not text or action_is_blocked(text):
+        return None
+    if "|" in text:
+        anchor, answer = text.split("|", 1)
+        anchor = " ".join(anchor.split()).strip()
+        answer = " ".join(answer.split()).strip()
+        if not anchor or not answer or action_is_blocked(anchor) or action_is_blocked(answer):
+            return None
+        return anchor, answer
+    return "", text
 
 
 def relaunch_command(exe: str, kind: str) -> str:
@@ -109,7 +141,12 @@ def page_image_for_prompt(prepared: PreparedImage) -> tuple[PreparedImage | None
     return prepared, False
 
 
-def look_at_browser(window_id: int | None, model: str) -> PageView | None:
+def look_at_browser(
+    window_id: int | None,
+    model: str,
+    *,
+    include_image: bool = True,
+) -> PageView | None:
     """Read the shared Edge or Chrome tab. None when the window is not one of those."""
     if not window_id:
         return None
@@ -140,7 +177,10 @@ def look_at_browser(window_id: int | None, model: str) -> PageView | None:
         return _unattached(kind, title, debugging_status(kind, command), command)
 
     try:
-        text, url, png, shot_too_large = read_page(websocket_url)
+        text, url, png, shot_too_large = read_page(
+            websocket_url,
+            include_image=include_image,
+        )
     except (CdpError, OSError, TimeoutError, ValueError) as exc:
         print(f"Could not read the browser page: {exc}")
         return _unattached(kind, title, f"Could not read the page ({exc}).", command)
@@ -186,7 +226,7 @@ def look_at_browser(window_id: int | None, model: str) -> PageView | None:
 
 
 def run_actions(websocket_url: str, actions: list[tuple[str, str]]) -> str:
-    """Run click, type, press, scroll, and navigate on the attached tab."""
+    """Run click, type, press, scroll, navigate, and choose on the attached tab."""
     if not BROWSER_CONTROL_ENABLED or not actions or not websocket_url:
         return ""
     notes = []
@@ -257,7 +297,11 @@ def match_tab(window_title: str, targets: list[dict]) -> dict | None:
     return matches[0]
 
 
-def read_page(websocket_url: str) -> tuple[str, str, bytes | None, bool]:
+def read_page(
+    websocket_url: str,
+    *,
+    include_image: bool = True,
+) -> tuple[str, str, bytes | None, bool]:
     """Return page text, url, png bytes, and whether the screenshot was too large."""
     expression = (
         "(() => {"
@@ -278,27 +322,28 @@ def read_page(websocket_url: str) -> tuple[str, str, bytes | None, bool]:
         url = str(value.get("url") or "")
         png = None
         too_large = False
-        try:
+        if include_image:
             try:
-                session.call("Page.enable")
-            except CdpError:
-                pass
-            shot = session.call(
-                "Page.captureScreenshot",
-                {
-                    "format": "png",
-                    "captureBeyondViewport": True,
-                    "fromSurface": True,
-                },
-                timeout=20,
-            )
-            encoded = shot.get("data") or ""
-            if encoded:
-                png = base64.b64decode(encoded)
-        except CdpError as exc:
-            if "too large" in str(exc).lower():
-                too_large = True
-            png = None
+                try:
+                    session.call("Page.enable")
+                except CdpError:
+                    pass
+                shot = session.call(
+                    "Page.captureScreenshot",
+                    {
+                        "format": "png",
+                        "captureBeyondViewport": True,
+                        "fromSurface": True,
+                    },
+                    timeout=20,
+                )
+                encoded = shot.get("data") or ""
+                if encoded:
+                    png = base64.b64decode(encoded)
+            except CdpError as exc:
+                if "too large" in str(exc).lower():
+                    too_large = True
+                png = None
         return text, url, png, too_large
 
 
@@ -598,6 +643,161 @@ def _json_get(url: str, timeout: float):
         return json.loads(response.read().decode("utf-8"))
 
 
+def _choose_expression(anchor: str, answer: str) -> str:
+    """Script that selects one answer and does not submit the page."""
+    script = """
+(() => {
+  const anchor = __ANCHOR__;
+  const answer = __ANSWER__;
+  const blocked = __BLOCKED__;
+  const norm = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const refused = (value) => blocked.some((phrase) => norm(value).includes(phrase));
+  if (!answer || refused(answer)) return 'refused';
+
+  const docs = [];
+  const visit = (win) => {
+    try { docs.push(win.document); } catch (e) { return; }
+    for (let i = 0; i < win.frames.length; i++) {
+      try { visit(win.frames[i]); } catch (e) {}
+    }
+  };
+  visit(window);
+
+  const nodes = (root, selector) => {
+    const found = [...root.querySelectorAll(selector)];
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.shadowRoot) found.push(...nodes(el.shadowRoot, selector));
+    });
+    return found;
+  };
+
+  const textOf = (el) => norm(el.innerText || el.textContent || el.getAttribute('aria-label') || '');
+
+  const scopeLength = (el) => {
+    if (!anchor) return 0;
+    let node = el;
+    let best = 1000000;
+    for (let i = 0; i < 8 && node; i++) {
+      const text = norm(node.innerText || node.textContent || '');
+      if (text.includes(anchor)) best = Math.min(best, text.length);
+      node = node.parentElement || node.host || null;
+    }
+    return best;
+  };
+
+  const inScope = (el) => !anchor || scopeLength(el) < anchor.length + 500;
+
+  const pickSelect = (doc) => {
+    const selects = nodes(doc, 'select').filter((select) =>
+      [...select.options].some((option) => norm(option.text) === answer)
+    );
+    const pool = anchor ? selects.filter(inScope) : selects;
+    if (!anchor && pool.length > 1) return 'need a sentence';
+    if (!pool.length) return '';
+    pool.sort((a, b) => scopeLength(a) - scopeLength(b));
+    const option = [...pool[0].options].find((item) => norm(item.text) === answer);
+    if (!option || refused(option.text)) return 'refused';
+    option.selected = true;
+    pool[0].value = option.value;
+    pool[0].dispatchEvent(new Event('input', {bubbles: true}));
+    pool[0].dispatchEvent(new Event('change', {bubbles: true}));
+    return 'chose ' + answer;
+  };
+
+  const pickRow = (doc) => {
+    const rows = nodes(doc, '.choice-row, [role="option"]');
+    const matches = rows.filter((el) => textOf(el) === answer && inScope(el));
+    if (!matches.length) return '';
+    const row = matches[0];
+    if (refused(textOf(row))) return 'refused';
+    const input = row.querySelector('input[type="radio"], input[type="checkbox"]');
+    if (input && input.checked) return 'chose ' + answer;
+    const clickable = row.querySelector('._clickable, label') || input || row;
+    if (refused(textOf(clickable))) return 'refused';
+    clickable.click();
+    if (input && !input.checked) {
+      input.checked = true;
+      input.dispatchEvent(new Event('input', {bubbles: true}));
+      input.dispatchEvent(new Event('change', {bubbles: true}));
+    }
+    return 'chose ' + answer;
+  };
+
+  const writeField = (field, value) => {
+    field.focus();
+    field.value = value;
+    field.dispatchEvent(new Event('input', {bubbles: true}));
+    field.dispatchEvent(new Event('change', {bubbles: true}));
+  };
+
+  const pickText = (doc) => {
+    const inputs = nodes(doc, 'input.fitb-input, textarea.fitb-input');
+    if (!inputs.length) return '';
+    if (!anchor && inputs.length > 1) return 'need a sentence';
+    const holders = [];
+    inputs.forEach((el) => {
+      const holder = el.closest('p, li, td') || el.parentElement;
+      if (holder && !holders.includes(holder)) holders.push(holder);
+    });
+    const pool = holders.filter(inScope);
+    if (!pool.length) return '';
+    pool.sort((a, b) => scopeLength(a) - scopeLength(b));
+    const fields = inputs.filter((el) => pool[0].contains(el));
+    const words = answer.split(' ').filter(Boolean);
+    if (fields.length === 1 || words.length === 1 && fields.length > 1 && fields.filter((el) => !norm(el.value)).length === 1) {
+      const field = fields.length === 1 ? fields[0] : fields.filter((el) => !norm(el.value))[0];
+      writeField(field, answer);
+      return 'chose ' + answer;
+    }
+    if (words.length === fields.length) {
+      fields.forEach((field, index) => writeField(field, words[index]));
+      return 'chose ' + answer;
+    }
+    return '';
+  };
+
+  const openMenu = (doc) => {
+    const openers = nodes(doc, 'button, [role="button"], [role="combobox"]').filter((el) => {
+      const text = textOf(el);
+      return (text === 'click to select' || text === '(click to select)') && inScope(el);
+    });
+    if (!openers.length) return false;
+    if (!anchor && openers.length !== 1) return false;
+    openers.sort((a, b) => scopeLength(a) - scopeLength(b));
+    openers[0].click();
+    return true;
+  };
+
+  for (const doc of docs) {
+    const selected = pickSelect(doc);
+    if (selected) return selected;
+    const chosen = pickRow(doc);
+    if (chosen) return chosen;
+    const typed = pickText(doc);
+    if (typed) return typed;
+  }
+  let opened = false;
+  for (const doc of docs) {
+    if (openMenu(doc)) opened = true;
+  }
+  if (opened) {
+    for (const doc of docs) {
+      const chosen = pickRow(doc);
+      if (chosen) return chosen;
+      const selected = pickSelect(doc);
+      if (selected) return selected;
+    }
+  }
+  return 'not found';
+})()
+"""
+    return (
+        script.replace("__ANCHOR__", json.dumps(" ".join(anchor.casefold().split())))
+        .replace("__ANSWER__", json.dumps(" ".join(answer.casefold().split())))
+        .replace("__BLOCKED__", json.dumps(list(_BLOCKED_ACTIONS)))
+    )
+
+
 def _run_one(session: CdpSession, verb: str, argument: str) -> str:
     verb = verb.strip().lower()
     argument = argument.strip()
@@ -648,7 +848,24 @@ def _run_one(session: CdpSession, verb: str, argument: str) -> str:
         )
         result = session.call("Runtime.evaluate", {"expression": expression, "returnByValue": True})
         return str((result.get("result") or {}).get("value") or "typed")
+    if verb == "choose":
+        if not CHOOSE_ENABLED:
+            return "choose is off"
+        parsed = parse_choose(argument)
+        if parsed is None:
+            return "refused"
+        anchor, answer = parsed
+        result = session.call(
+            "Runtime.evaluate",
+            {"expression": _choose_expression(anchor, answer), "returnByValue": True},
+        )
+        if result.get("exceptionDetails"):
+            detail = result.get("exceptionDetails") or {}
+            return str(detail.get("text") or "choose failed")[:160]
+        return str((result.get("result") or {}).get("value") or "not found")
     if verb == "click":
+        if action_is_blocked(argument):
+            return "refused"
         label = argument[:200]
         expression = (
             "(() => {"

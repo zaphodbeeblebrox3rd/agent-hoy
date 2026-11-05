@@ -12,7 +12,7 @@ MAX_MEMORY_LINES = 100
 MAX_MEMORY_LINE_CHARS = 240
 MAX_ACTIONS = 8
 
-_ACTION_VERBS = ("click", "type", "press", "scroll", "navigate")
+_ACTION_VERBS = ("click", "type", "press", "scroll", "navigate", "choose")
 _HEADER = (
     "# Live assistant memory. This folder is gitignored.\n"
     "# One fact per bullet. The assistant reloads this file on the next turn.\n\n"

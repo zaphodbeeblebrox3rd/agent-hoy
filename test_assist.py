@@ -6,11 +6,22 @@ import sys
 
 from assist_mode import (
     ASSIST_MODES_ENABLED,
+    RAPID_FIRE_ENABLED,
+    REUSE_UNCHANGED_PAGE,
+    SCREEN_CAPTURE_DIRECT,
     VISION_OFF,
     VISION_SCREEN,
     VISION_WINDOW,
     AssistSettings,
     captures,
+    capture_identity,
+    followup_capture,
+    guide_send_plan,
+    general_mode,
+    rapid_fire_mode,
+    rapid_reply,
+    skips_topic_path,
+    page_key,
     guide_active,
     load_assist_settings,
     save_assist_settings,
@@ -25,7 +36,15 @@ from image_payload import (
     prepare_rgb,
 )
 from screen_capture import _clamp_region, capture_backend_name, session_is_wayland
-from voice_output import text_for_speech
+from voice_output import (
+    BRIEF_PART_CHARS,
+    BRIEF_SPOKEN_SENTENCES,
+    MAX_SPOKEN_CHARS,
+    PART_PAUSE_SECONDS,
+    brief_for_speech,
+    speech_parts,
+    text_for_speech,
+)
 
 
 def test_rollback_defaults():
@@ -35,9 +54,24 @@ def test_rollback_defaults():
     assert defaults.voice is False
     assert defaults.vision == VISION_OFF
     assert defaults.browser_control is False
+    assert defaults.non_it is False
+    assert defaults.rapid_fire is False
+    assert RAPID_FIRE_ENABLED is True
+    assert rapid_fire_mode(defaults) is False
+    assert skips_topic_path(defaults) is False
     assert speaks(defaults) is False
     assert captures(defaults) is False
+    assert general_mode(defaults) is False
     assert guide_active(defaults) is False
+    general = AssistSettings(True, False, VISION_OFF, False, True)
+    assert general_mode(general) is True
+    assert guide_active(general) is True
+    fired = AssistSettings(False, False, VISION_OFF, False, False, True)
+    assert fired.rapid_fire is True
+    assert rapid_fire_mode(fired) is True
+    assert skips_topic_path(fired) is True
+    assert guide_active(fired) is True
+    assert captures(general) is False
     combined = AssistSettings(True, True, VISION_SCREEN)
     assert speaks(combined) is True
     assert captures(combined) is True
@@ -55,6 +89,16 @@ def test_persist_assist_mode(tmp_dir: str):
     save_assist_settings(AssistSettings(True, False, VISION_OFF, True), tmp_dir)
     with_control = load_assist_settings(tmp_dir)
     assert with_control.browser_control is True
+    assert with_control.non_it is False
+    save_assist_settings(AssistSettings(True, False, VISION_OFF, False, True), tmp_dir)
+    with_general = load_assist_settings(tmp_dir)
+    assert with_general.non_it is True
+    assert with_general.rapid_fire is False
+    assert general_mode(with_general) is True
+    save_assist_settings(AssistSettings(True, False, VISION_OFF, False, False, True), tmp_dir)
+    with_rapid = load_assist_settings(tmp_dir)
+    assert with_rapid.rapid_fire is True
+    assert with_rapid.non_it is False
     with open(os.path.join(tmp_dir, "assist_mode.conf"), "w", encoding="utf-8") as handle:
         handle.write("mode = window\n")
     legacy = load_assist_settings(tmp_dir)
@@ -113,6 +157,90 @@ def test_voice_text_cleanup():
     assert "Save" in spoken
     assert "click" in spoken
     print("OK speech text cleanup")
+    return True
+
+
+def test_unchanged_page_skips_the_screenshot():
+    assert REUSE_UNCHANGED_PAGE is True
+    first = page_key("https://example.test/q", "question 30 motor unit", b"pixels")
+    same = page_key("https://example.test/q", "question 30 motor unit", b"other-pixels")
+    changed = page_key("https://example.test/q", "question 31 excitation", b"pixels")
+    assert first == same
+    assert first != changed
+    assert guide_send_plan("", "", first, "Answer the question.", True) == "image"
+    assert guide_send_plan(first, "Answer the question.", first, "Answer the question.", True) == "skip"
+    assert guide_send_plan(first, "Answer the question.", first, "What about blank two?", True) == "text"
+    assert guide_send_plan(first, "old", changed, "What about blank two?", True) == "image"
+    assert guide_send_plan(first, "old", first, "new words", True, reuse=False) == "image"
+    assert SCREEN_CAPTURE_DIRECT is True
+    same_screen = capture_identity("https://example.test/q", "same text", b"pixels-a", screen=True)
+    moved_screen = capture_identity("https://example.test/q", "same text", b"pixels-b", screen=True)
+    same_window = capture_identity("https://example.test/q", "same text", b"pixels-a", screen=False)
+    other_window = capture_identity("https://example.test/q", "same text", b"pixels-b", screen=False)
+    assert same_screen != moved_screen
+    assert same_window == other_window
+    send, kept, note = followup_capture(
+        "text",
+        "the question on the page",
+        "Screen, 1920x1080, original resolution.",
+        repeated=True,
+    )
+    assert send is False
+    assert kept == "the question on the page"
+    assert "not sent again" in note
+    assert "page text" in note
+    send, kept, note = followup_capture(
+        "text",
+        "",
+        "No screenshot (capture failed).",
+        repeated=False,
+    )
+    assert send is True
+    assert note == "No screenshot (capture failed)."
+    long_reply = "The answer is motor unit. " * 40
+    spoken = text_for_speech(long_reply)
+    assert len(spoken) <= MAX_SPOKEN_CHARS
+    assert spoken.endswith(".")
+    brief = brief_for_speech(
+        "The blanks are motor unit, powerful, finely controlled, thigh, and eye. "
+        "That covers every row.\n\n"
+        "Large units make stronger contractions. The thigh is the large example."
+    )
+    assert brief.startswith("The blanks are motor unit")
+    assert "That covers every row" not in brief
+    assert "thigh is the large example" not in brief
+    assert brief.endswith(".")
+    assert BRIEF_SPOKEN_SENTENCES == 1
+    assert BRIEF_PART_CHARS == 80
+    long_sentence = "A" * 500 + "."
+    assert brief_for_speech(long_sentence + "\n\nExtra detail stays here.") == long_sentence
+    assert PART_PAUSE_SECONDS == 2.0
+    assert speech_parts("The plasma membrane is the sarcolemma.\n\nExtra detail.") == [
+        "The plasma membrane is the sarcolemma."
+    ]
+    assert speech_parts("motor unit\npowerful\nfinely controlled\n\nThe thigh is the large example.") == [
+        "motor unit",
+        "powerful",
+        "finely controlled",
+    ]
+    assert speech_parts("1. motor unit. 2. powerful. 3. eye.") == [
+        "1. motor unit.",
+        "2. powerful.",
+        "3. eye.",
+    ]
+    assert speech_parts(
+        "myofilaments\n"
+        "They are made of actin and myosin and run the length of the myofibril inside the fiber.\n\n"
+        "More detail stays on screen."
+    ) == ["myofilaments"]
+    long_lines = (
+        "The subunits are called myofilaments and they fill each myofibril from one end to the other.\n"
+        "Actin and myosin are the proteins that form those subunits and they overlap in the sarcomere."
+    )
+    assert speech_parts(long_lines) == [
+        "The subunits are called myofilaments and they fill each myofibril from one end to the other."
+    ]
+    print("OK unchanged page skips the screenshot")
     return True
 
 
@@ -248,6 +376,9 @@ def test_file_context_and_output(tmp_dir: str):
     assert produced == [("scratch.txt", "line one\nline two")]
 
     output_dir = os.path.join(tmp_dir, "output")
+    if os.path.isdir(output_dir):
+        for name in os.listdir(output_dir):
+            os.remove(os.path.join(output_dir, name))
     written = write_output_files(produced, output_dir)
     assert len(written) == 1
     with open(written[0], encoding="utf-8") as handle:
@@ -255,6 +386,18 @@ def test_file_context_and_output(tmp_dir: str):
     again = write_output_files(produced, output_dir)
     assert os.path.basename(again[0]) == "scratch-2.txt"
     print("OK file context and downloadable output")
+    return True
+
+
+def test_non_it_does_not_prime_computer_transcript():
+    from transcription_config import transcript_is_prompt_echo, whisper_initial_prompt
+
+    assert whisper_initial_prompt(False)
+    assert whisper_initial_prompt(True) is None
+    echo = "This is a technical discussion about computer systems, HPC clusters."
+    assert transcript_is_prompt_echo(echo) is True
+    assert transcript_is_prompt_echo("Where does the sarcolemma go?") is False
+    print("OK non-IT transcript prompt")
     return True
 
 
@@ -274,13 +417,27 @@ def test_guide_is_a_conversation():
 
     quiet = guide_instructions(False, True)
     assert "you, the assistant" in quiet
+    assert "Only the first paragraph is spoken" in quiet
+    rapid_text = guide_instructions(True, False, False, False, True)
+    assert "Do not explain" in rapid_text
+    assert "further detail" not in rapid_text
+    assert "choose" in rapid_text
+    assert rapid_reply("contraction\n\nMuscle fibers develop tension.") == "contraction"
+    assert rapid_reply("transverse\ntubule\n\nThe tubule opens the channels.") == "transverse\ntubule"
+    assert rapid_reply("contraction. The fibers shorten after that.") == "contraction."
     assert "not the assumed topic" in quiet
     assert "Live scroll" in quiet
     assert "MEMORY:" in quiet
     assert "ACTIONS:" not in quiet
+    assert "computer-support session" not in quiet
+    general = guide_instructions(False, True, True, True)
+    assert "debugging port is not the question" in general
+    assert "empty boxes from top to bottom" in general
     assert "Give only the next step" not in quiet
     acting = guide_instructions(True, False)
     assert "ACTIONS:" in acting
+    assert "choose" in acting
+    assert "Do not submit" in acting
     assert "MEMORY:" not in acting
     history = format_recent_turns([("what can you do", "I can help with that.")])
     prompt = build_guide_prompt(
@@ -313,6 +470,8 @@ def test_memory_and_action_blocks(tmp_dir: str):
         "ACTIONS:\n"
         "click: Sign in\n"
         "type: hello\n"
+        "choose: contraction\n"
+        "choose: muscle fibers develop tension | contraction\n"
     )
     spoken, memories, actions, files = split_guide_reply(reply)
     assert files == []
@@ -322,9 +481,14 @@ def test_memory_and_action_blocks(tmp_dir: str):
     assert memories == ["Uses Edge", "uses edge"]
     assert actions[0] == ("click", "Sign in")
     assert actions[1] == ("type", "hello")
+    assert actions[2] == ("choose", "contraction")
+    assert actions[3] == ("choose", "muscle fibers develop tension | contraction")
     assert visible_reply(reply) == spoken
 
     memory_dir = os.path.join(tmp_dir, "memory")
+    stale_memory = os.path.join(memory_dir, "agent_memory.md")
+    if os.path.exists(stale_memory):
+        os.remove(stale_memory)
     remember(memories, memory_dir)
     remember(["Uses Edge", "Lives in Chicago"], memory_dir)
     stored = load_memory(memory_dir)
@@ -333,8 +497,9 @@ def test_memory_and_action_blocks(tmp_dir: str):
     many = [f"fact {index}" for index in range(memory_store.MAX_MEMORY_LINES + 5)]
     remember(many, memory_dir)
     capped = load_memory(memory_dir)
-    assert "fact 0" not in capped
-    assert f"fact {memory_store.MAX_MEMORY_LINES + 4}" in capped
+    capped_facts = [line[2:].strip() for line in capped.splitlines() if line.startswith("- ")]
+    assert "fact 0" not in capped_facts
+    assert f"fact {memory_store.MAX_MEMORY_LINES + 4}" in capped_facts
 
     previous = memory_store.MEMORY_ENABLED
     memory_store.MEMORY_ENABLED = False
@@ -356,8 +521,11 @@ def test_browser_matching_and_actions():
     from browser_bridge import (
         CdpError,
         CdpSession,
+        CHOOSE_ENABLED,
+        action_is_blocked,
         browser_actions_allowed,
         debugging_status,
+        parse_choose,
         look_at_browser,
         page_image_for_prompt,
         relaunch_command,
@@ -381,6 +549,18 @@ def test_browser_matching_and_actions():
     assert look_at_browser(None, "gpt-4.1-mini") is None
     assert browser_actions_allowed(False) is False
     assert browser_actions_allowed(True) is True
+    assert CHOOSE_ENABLED is True
+    assert action_is_blocked("Submit") is True
+    assert action_is_blocked("Check my work") is True
+    assert action_is_blocked("Save & Exit") is True
+    assert action_is_blocked("Exit Assignment") is True
+    assert action_is_blocked("contraction") is False
+    assert parse_choose("Submit") is None
+    assert parse_choose("contraction") == ("", "contraction")
+    assert parse_choose("muscle fibers develop tension | contraction") == (
+        "muscle fibers develop tension",
+        "contraction",
+    )
 
     rgb = _os.urandom(80 * 60 * 3)
     shrunk = prepare_rgb(rgb, 80, 60, "gpt-4o", max_encoded_bytes=1)
@@ -461,6 +641,53 @@ def test_cdp_call_roundtrip():
     return True
 
 
+def test_turn_timing_log(tmp_dir):
+    import json
+
+    import metrics
+
+    log_dir = os.path.join(tmp_dir, "timing")
+    quiet_dir = os.path.join(tmp_dir, "timing-off")
+    original_dir = metrics.METRICS_DIR
+    original_enabled = metrics.METRICS_ENABLED
+    metrics.METRICS_DIR = log_dir
+    metrics.METRICS_ENABLED = True
+    try:
+        stale = os.path.join(log_dir, metrics.METRICS_FILE)
+        if os.path.exists(stale):
+            os.remove(stale)
+        timer = metrics.TurnTimer("guide")
+        timer.start("capture")
+        timer.stop("attached 1288x903")
+        timer.start("model")
+        timer.stop("x" * 400)
+        timer.finish()
+        timer.finish()
+        path = os.path.join(log_dir, metrics.METRICS_FILE)
+        lines = open(path, encoding="utf-8").read().splitlines()
+        assert len(lines) == 1
+        record = json.loads(lines[0])
+        assert record["kind"] == "guide"
+        assert "T" in record["at"]
+        assert record["total_ms"] >= 0
+        assert record["stages"][0]["stage"] == "capture"
+        assert record["stages"][0]["note"] == "attached 1288x903"
+        assert record["stages"][1]["stage"] == "model"
+        assert len(record["stages"][1]["note"]) == 160
+        metrics.METRICS_ENABLED = False
+        metrics.METRICS_DIR = quiet_dir
+        quiet = metrics.TurnTimer("speech")
+        quiet.start("synthesize")
+        quiet.stop("chars=12")
+        quiet.finish()
+        assert not os.path.exists(os.path.join(quiet_dir, metrics.METRICS_FILE))
+    finally:
+        metrics.METRICS_DIR = original_dir
+        metrics.METRICS_ENABLED = original_enabled
+    print("OK turn timing log")
+    return True
+
+
 def main():
     tmp_dir = os.path.join(os.path.dirname(__file__), "cache", "assist-mode-test")
     os.makedirs(tmp_dir, exist_ok=True)
@@ -471,10 +698,13 @@ def main():
         test_prepare_keeps_png_bytes(),
         test_byte_cap_recompresses_before_resize(),
         test_voice_text_cleanup(),
+        test_unchanged_page_skips_the_screenshot(),
         test_analysis_history_continues_only_the_same_reply(),
+        test_non_it_does_not_prime_computer_transcript(),
         test_voice_is_conversational(),
         test_guide_is_a_conversation(),
         test_memory_and_action_blocks(tmp_dir),
+        test_turn_timing_log(tmp_dir),
         test_file_context_and_output(tmp_dir),
         test_browser_matching_and_actions(),
         test_cdp_call_roundtrip(),

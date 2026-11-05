@@ -28,7 +28,6 @@ _GROK_MODELS: List[Tuple[str, str]] = [
 _OPENAI_MODELS: List[Tuple[str, str]] = [
     ("GPT-4o Mini", "gpt-4o-mini"),
     ("GPT-4o", "gpt-4o"),
-    ("GPT-4.1 Nano", "gpt-4.1-nano"),
     ("GPT-4.1 Mini", "gpt-4.1-mini"),
     ("GPT-4.1", "gpt-4.1"),
     ("GPT-5 Nano", "gpt-5-nano"),

@@ -40,6 +40,7 @@ class OpenAIAnalyzer:
 
         self._client_provider = None
         self._lmstudio_loaded_id = None
+        self._speech_client = None
         if self._ensure_client():
             print(f"{self._client_provider} client initialized successfully")
         elif openai_config.is_configured() or openai_config.xai_is_configured():
@@ -92,6 +93,18 @@ class OpenAIAnalyzer:
             return False
         self._client_provider = provider
         return True
+
+    def speech_client(self):
+        """gpt-4o-mini-tts stays on OpenAI when the chat model is Grok or LM Studio."""
+        from voice_output import TTS_USES_OPENAI
+
+        if not TTS_USES_OPENAI:
+            return self.client
+        if not openai_config.is_configured():
+            return None
+        if self._speech_client is None:
+            self._speech_client = openai.OpenAI(api_key=openai_config.api_key)
+        return self._speech_client
 
     def _query_lmstudio_model(self) -> Optional[str]:
         """Ask the local server which model is loaded. None if it is down or empty."""
@@ -466,12 +479,14 @@ class OpenAIAnalyzer:
         page_text: str = "",
         attached: str = "",
         instructions: Optional[str] = None,
+        max_output_tokens: Optional[int] = None,
     ) -> tuple[str, float]:
         """Conversational reply. image is (bytes, mime, detail) or None."""
         if not self.is_available():
             return "OpenAI is not configured. Voice and vision need an API key.", 0.0
 
         guide_text = instructions or GUIDE_INSTRUCTIONS
+        output_tokens = max_output_tokens or GUIDE_MAX_OUTPUT_TOKENS
         prompt = build_guide_prompt(
             transcript,
             capture_note,
@@ -486,7 +501,7 @@ class OpenAIAnalyzer:
             stream_callback,
             image=image,
             instructions=guide_text,
-            max_output_tokens=GUIDE_MAX_OUTPUT_TOKENS,
+            max_output_tokens=output_tokens,
             use_cache=False,
             use_fallback=False,
         )
@@ -499,7 +514,7 @@ class OpenAIAnalyzer:
                 stream_callback,
                 image=retry_image,
                 instructions=guide_text,
-                max_output_tokens=GUIDE_MAX_OUTPUT_TOKENS,
+                max_output_tokens=output_tokens,
                 use_cache=False,
                 use_fallback=False,
             )

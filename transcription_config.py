@@ -17,6 +17,22 @@ WHISPER_INITIAL_PROMPT = (
     "Use technical terminology accurately."
 )
 
+
+def whisper_initial_prompt(general: bool) -> str | None:
+    """Non-IT must not prime the transcript with a computer-systems sentence."""
+    if general:
+        return None
+    return WHISPER_INITIAL_PROMPT
+
+
+def transcript_is_prompt_echo(text: str) -> bool:
+    """True when Whisper recited its own computer-systems prompt."""
+    cleaned = " ".join((text or "").split()).casefold().strip(" .")
+    prompt = " ".join(WHISPER_INITIAL_PROMPT.split()).casefold().strip(" .")
+    if len(cleaned) < 24:
+        return False
+    return cleaned == prompt or prompt.startswith(cleaned) or cleaned.startswith(prompt)
+
 # Fast decoding defaults for live microphone chunks (override for accuracy)
 WHISPER_FAST_MODE = os.getenv("WHISPER_FAST_MODE", "true").lower() in ("1", "true", "yes", "on")
 WHISPER_BEAM_SIZE = int(os.getenv("WHISPER_BEAM_SIZE", "1"))

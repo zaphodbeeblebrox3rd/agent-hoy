@@ -6,6 +6,8 @@ xai_key.txt
 ai_provider_keys.txt
 # Live assistant memory
 memory/
+# Stage timings for slow turns
+metrics/
 # Training session transcripts and screenshots
 training/
 # Files the assistant writes on request

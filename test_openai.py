@@ -114,6 +114,33 @@ def test_reasoning_model_detection():
         return False
 
 
+def test_speech_stays_on_openai():
+    print("\nTesting speech client stays on OpenAI...")
+    try:
+        from openai_config import openai_config
+        from openai_integration import OpenAIAnalyzer
+        from voice_output import TTS_USES_OPENAI
+
+        assert TTS_USES_OPENAI is True
+        analyzer = OpenAIAnalyzer()
+        original_model = openai_config.get_model()
+        try:
+            openai_config.set_model("grok-4.7")
+            assert analyzer._ensure_client() is True
+            speaker = analyzer.speech_client()
+            assert speaker is not None
+            assert speaker is not analyzer.client
+            assert "api.openai.com" in str(speaker.base_url)
+            assert "api.x.ai" in str(analyzer.client.base_url)
+        finally:
+            openai_config.set_model(original_model)
+        print("OK speech client stays on OpenAI")
+        return True
+    except Exception as e:
+        print(f"FAIL speech client: {e}")
+        return False
+
+
 def test_responses_kwargs_builder():
     print("\nTesting Responses API kwargs builder...")
     try:
@@ -286,6 +313,7 @@ def main():
         test_openai_configuration,
         test_rollback_flags,
         test_reasoning_model_detection,
+        test_speech_stays_on_openai,
         test_responses_kwargs_builder,
         test_cache_key_includes_model,
         test_persist_model_round_trip,

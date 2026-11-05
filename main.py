@@ -26,16 +26,28 @@ from datetime import datetime, timedelta
 
 from assist_mode import (
     ASSIST_MODES_ENABLED,
+    NON_IT_ENABLED,
+    RAPID_FIRE_ENABLED,
+    RAPID_FIRE_MAX_OUTPUT_TOKENS,
     DIALOGUE_TURNS,
     GUIDE_TRANSCRIPT_CHARS,
+    REUSE_UNCHANGED_PAGE,
+    SCREEN_CAPTURE_DIRECT,
     VISION_CHOICES,
     VISION_OFF,
     VISION_SCREEN,
     AssistSettings,
     captures,
     format_recent_turns,
+    capture_identity,
+    followup_capture,
+    general_mode,
     guide_active,
+    rapid_fire_mode,
+    rapid_reply,
+    skips_topic_path,
     guide_instructions,
+    guide_send_plan,
     load_assist_settings,
     save_assist_settings,
     speaks,
@@ -54,6 +66,7 @@ from file_exchange import (
     write_output_files,
 )
 from memory_store import MEMORY_ENABLED, load_memory, remember, split_guide_reply, visible_reply
+from metrics import TurnTimer
 from config_loader import (
     load_question_patterns,
     load_question_type_patterns,
@@ -70,7 +83,8 @@ from transcription_config import (
     WHISPER_BEAM_SIZE,
     WHISPER_CONDITION_ON_PREVIOUS,
     WHISPER_FAST_MODE,
-    WHISPER_INITIAL_PROMPT,
+    transcript_is_prompt_echo,
+    whisper_initial_prompt,
     WHISPER_LANGUAGE,
     WHISPER_SAMPLE_RATE,
     get_whisper_model,
@@ -175,7 +189,14 @@ from train_mode import (
     render_session_report,
     run_training,
 )
-from voice_output import play_wav_bytes, synthesize_speech
+from voice_output import (
+    PART_PAUSE_SECONDS,
+    TTS_USES_OPENAI,
+    play_wav_bytes,
+    speech_parts,
+    synthesize_speech,
+    wait_between_parts,
+)
 try:
     from openai_integration import openai_analyzer
     OPENAI_AVAILABLE = True
@@ -266,6 +287,8 @@ class SpeechTranscriptionApp:
         self._speech_generation = 0
         self._resume_after_speech = False
         self._guide_cursor = 0
+        self._guide_page_key = ""
+        self._guide_utterance = ""
         self._dialogue = []
         self._dialogue_lock = threading.Lock()
         self._attached_blocks = []
@@ -418,6 +441,22 @@ class SpeechTranscriptionApp:
                     variable=self.browser_control,
                     command=self.on_assist_changed,
                 ).pack(side=tk.LEFT, padx=(4, 0))
+            if NON_IT_ENABLED:
+                self.non_it_mode = tk.BooleanVar(value=settings.non_it)
+                ttk.Checkbutton(
+                    mode_row,
+                    text="Non-IT",
+                    variable=self.non_it_mode,
+                    command=self.on_assist_changed,
+                ).pack(side=tk.LEFT, padx=(12, 0))
+            if RAPID_FIRE_ENABLED:
+                self.rapid_fire_mode = tk.BooleanVar(value=settings.rapid_fire)
+                ttk.Checkbutton(
+                    mode_row,
+                    text="Rapid fire",
+                    variable=self.rapid_fire_mode,
+                    command=self.on_assist_changed,
+                ).pack(side=tk.LEFT, padx=(12, 0))
 
         # Second row - Status labels and settings
         bottom_row = ttk.Frame(control_frame)
@@ -694,12 +733,14 @@ class SpeechTranscriptionApp:
         self._sync_user_entry_mode(focus=True)
         print("Stopped listening for speech")
     
-    def _make_ai_stream_callback(self, source="analysis", hide_blocks=False):
+    def _make_ai_stream_callback(self, source="analysis", hide_blocks=False, rapid=False):
         """Return a callback that streams partial AI text into one pane block."""
         block_id = f"{source}{time.time_ns()}"
 
         def callback(partial_text):
             content = visible_reply(partial_text) if hide_blocks else partial_text
+            if rapid:
+                content = rapid_reply(content)
             if hide_blocks and not str(content).strip():
                 return
             self.root.after(
@@ -884,12 +925,18 @@ class SpeechTranscriptionApp:
         if not self.check_flac_availability():
             return ""
 
-        text = self.recognizer.recognize_google(
-            audio,
-            language="en-US",
-            show_all=False,
-            with_confidence=False,
-        )
+        timer = TurnTimer("transcribe")
+        timer.start("google")
+        try:
+            text = self.recognizer.recognize_google(
+                audio,
+                language="en-US",
+                show_all=False,
+                with_confidence=False,
+            )
+        finally:
+            timer.stop()
+            timer.finish()
         return self.correct_transcription_errors(text.strip())
 
     def _normalize_transcription_text(self, full_transcription: str) -> str:
@@ -1095,27 +1142,34 @@ class SpeechTranscriptionApp:
 
             audio_array = self._resample_audio(audio_array, sample_rate)
 
-            prompt = WHISPER_INITIAL_PROMPT
-            if WHISPER_CONDITION_ON_PREVIOUS and self.last_whisper_text:
-                prompt = f"{WHISPER_INITIAL_PROMPT} Previous text: {self.last_whisper_text[-120:]}"
+            prompt = whisper_initial_prompt(skips_topic_path(self._current_assist()))
+            if prompt and WHISPER_CONDITION_ON_PREVIOUS and self.last_whisper_text:
+                prompt = f"{prompt} Previous text: {self.last_whisper_text[-120:]}"
 
-            result = self.whisper_model.transcribe(
-                audio_array,
-                language=WHISPER_LANGUAGE,
-                task="transcribe",
-                fp16=self.whisper_fp16,
-                verbose=False,
-                beam_size=WHISPER_BEAM_SIZE,
-                best_of=1,
-                temperature=0,
-                without_timestamps=True,
-                condition_on_previous_text=WHISPER_CONDITION_ON_PREVIOUS,
-                initial_prompt=prompt,
-            )
+            timer = TurnTimer("transcribe")
+            timer.start("whisper")
+            try:
+                result = self.whisper_model.transcribe(
+                    audio_array,
+                    language=WHISPER_LANGUAGE,
+                    task="transcribe",
+                    fp16=self.whisper_fp16,
+                    verbose=False,
+                    beam_size=WHISPER_BEAM_SIZE,
+                    best_of=1,
+                    temperature=0,
+                    without_timestamps=True,
+                    condition_on_previous_text=WHISPER_CONDITION_ON_PREVIOUS,
+                    initial_prompt=prompt,
+                )
+            finally:
+                seconds = len(audio_array) / WHISPER_SAMPLE_RATE
+                timer.stop(f"{self.whisper_device} audio={seconds:.1f}s")
+                timer.finish()
 
             if result and "text" in result:
                 text = result["text"].strip()
-                if text:
+                if text and not transcript_is_prompt_echo(text):
                     self.last_whisper_text = text
                     return self.correct_transcription_errors(text)
             return ""
@@ -1287,7 +1341,7 @@ class SpeechTranscriptionApp:
             if current_time - self.last_speech_time >= self.question_completion_timeout:
                 self._verbose("Question completion detected, scheduling AI analysis...")
                 settings = self._current_assist()
-                if settings.transcription:
+                if settings.transcription and not skips_topic_path(settings):
                     full_transcription = self.transcription_text.get("1.0", tk.END).strip()
                     threading.Thread(
                         target=self.check_and_analyze_keywords_throttled,
@@ -1324,7 +1378,10 @@ class SpeechTranscriptionApp:
     def check_questions_async(self, text):
         """Asynchronously check for questions without blocking transcription"""
         try:
-            if self.detect_question(text) and self._current_assist().transcription:
+            settings = self._current_assist()
+            if skips_topic_path(settings):
+                return
+            if self.detect_question(text) and settings.transcription:
                 self.provide_troubleshooting_suggestions(text)
         except Exception as e:
             print(f"Error in async question checking: {e}")
@@ -1332,6 +1389,8 @@ class SpeechTranscriptionApp:
     def highlight_keywords(self):
         """Highlight detected keywords in the transcription (debounced, UI thread only)."""
         self._highlight_debounce_id = None
+        if skips_topic_path(self._current_assist()):
+            return
         try:
             tags_to_remove = [
                 tag for tag in self.transcription_text.tag_names()
@@ -1493,6 +1552,10 @@ class SpeechTranscriptionApp:
             labels.append(settings.vision.title())
         if settings.browser_control:
             labels.append("Control browser")
+        if general_mode(settings):
+            labels.append("Non-IT")
+        if rapid_fire_mode(settings):
+            labels.append("Rapid fire")
         self.update_ai_status("Assist: " + (", ".join(labels) if labels else "Off"))
         self._sync_user_entry_mode(focus=True)
 
@@ -1502,11 +1565,19 @@ class SpeechTranscriptionApp:
         browser_control = False
         if BROWSER_CONTROL_ENABLED and hasattr(self, "browser_control"):
             browser_control = bool(self.browser_control.get())
+        non_it = False
+        if NON_IT_ENABLED and hasattr(self, "non_it_mode"):
+            non_it = bool(self.non_it_mode.get())
+        rapid_fire = False
+        if RAPID_FIRE_ENABLED and hasattr(self, "rapid_fire_mode"):
+            rapid_fire = bool(self.rapid_fire_mode.get())
         return AssistSettings(
             bool(self.transcription_assist.get()),
             bool(self.voice_assist.get()),
             self.vision_mode.get(),
             browser_control,
+            non_it,
+            rapid_fire,
         )
 
     def _on_app_focus_out(self, event):
@@ -1525,6 +1596,7 @@ class SpeechTranscriptionApp:
     def _run_guide_turn(self, snapshot: str):
         """Talk with the user, using memory, recent turns, and the shared page."""
         acquired = False
+        timer = None
         try:
             settings = getattr(self, "_scheduled_settings", AssistSettings())
             if not guide_active(settings):
@@ -1553,6 +1625,7 @@ class SpeechTranscriptionApp:
                     return
                 self.guide_running = True
                 acquired = True
+            timer = TurnTimer("guide")
 
             self.last_guide_time = current_time
             recent = new_text[-GUIDE_TRANSCRIPT_CHARS:]
@@ -1566,17 +1639,73 @@ class SpeechTranscriptionApp:
             page = None
             page_text = ""
             capture_note = "No screenshot. Voice only. No browser tab is attached."
+            capture_metric = "none"
+            screen_direct = settings.vision == VISION_SCREEN and SCREEN_CAPTURE_DIRECT
             if captures(settings):
+                timer.start("capture")
                 self.root.after(0, lambda: self.update_ai_status("Capturing..."))
-                page = self._page_for_guide(settings.vision, openai_config.model)
-                if page and page.attached:
-                    page_text = page.text
-                    capture_note = page.status
-                    if page.prepared is not None:
-                        image = (page.prepared.data, page.prepared.mime, page.prepared.detail)
-                    print(capture_note)
+                if screen_direct:
+                    captured = self._capture_for_guide(VISION_SCREEN)
+                    page = self._page_for_guide(
+                        openai_config.model,
+                        include_image=not bool(captured.png_bytes),
+                    )
+                    if captured.png_bytes:
+                        prepared = prepare_encoded(captured.png_bytes, openai_config.model)
+                        image = (prepared.data, prepared.mime, prepared.detail)
+                        resolution = (
+                            "resized to fit the API limit"
+                            if prepared.resized
+                            else "original resolution"
+                        )
+                        capture_note = (
+                            f"Screen, {prepared.width}x{prepared.height}, {resolution}."
+                        )
+                        capture_metric = f"Screen {prepared.width}x{prepared.height}"
+                        print(
+                            f"Captured Screen {prepared.width}x{prepared.height} "
+                            f"resized={prepared.resized} detail={prepared.detail}"
+                        )
+                    else:
+                        capture_note = f"No screenshot ({captured.error or 'capture failed'})."
+                        capture_metric = "failed"
+                        print(capture_note)
+                    if page and page.attached:
+                        page_text = page.text
+                        if image is not None:
+                            capture_note = (
+                                f"{capture_note} Page text from the attached browser tab is included."
+                            )
+                            print(f"Attached {page.browser} tab for page text.")
+                        elif page.prepared is not None:
+                            image = (
+                                page.prepared.data,
+                                page.prepared.mime,
+                                page.prepared.detail,
+                            )
+                            capture_metric = (
+                                f"attached {page.prepared.width}x{page.prepared.height}"
+                            )
+                            capture_note = f"{capture_note} {page.status}"
+                            print(page.status)
+                    elif page and page.status and not skips_topic_path(settings) and image is None:
+                        capture_note = f"{capture_note} {page.status}"
+                        print(page.status)
                 else:
-                    if page and page.status:
+                    page = self._page_for_guide(openai_config.model)
+                    if page and page.attached:
+                        page_text = page.text
+                        capture_note = page.status
+                        if page.prepared is not None:
+                            image = (page.prepared.data, page.prepared.mime, page.prepared.detail)
+                            capture_metric = (
+                                f"attached {page.prepared.width}x{page.prepared.height}"
+                            )
+                        else:
+                            capture_metric = "attached text"
+                        print(capture_note)
+                if not screen_direct and not (page and page.attached):
+                    if page and page.status and not skips_topic_path(settings):
                         status_message = page.status
                         self.root.after(
                             0,
@@ -1597,17 +1726,51 @@ class SpeechTranscriptionApp:
                         )
                         if captured.window_id:
                             self._shared_window_id = captured.window_id
+                        capture_metric = f"{captured.label} {prepared.width}x{prepared.height}"
                         print(
                             f"Captured {captured.label} {prepared.width}x{prepared.height} "
                             f"resized={prepared.resized} detail={prepared.detail}"
                         )
                     else:
                         capture_note = f"No screenshot ({captured.error or 'capture failed'})."
+                        capture_metric = "failed"
                         print(capture_note)
-                    if page and page.status:
+                    if page and page.status and not skips_topic_path(settings):
                         capture_note = f"{capture_note} {page.status}"
-                    else:
+                    elif not skips_topic_path(settings):
                         capture_note = f"{capture_note} No browser tab is attached."
+                timer.stop(capture_metric)
+
+            page_url = page.url if page is not None else ""
+            image_bytes = image[0] if image else None
+            turn_key = capture_identity(
+                page_url,
+                page_text,
+                image_bytes,
+                screen=screen_direct and capture_metric.startswith("Screen"),
+            )
+            plan = guide_send_plan(
+                self._guide_page_key,
+                self._guide_utterance,
+                turn_key,
+                recent,
+                image is not None,
+                REUSE_UNCHANGED_PAGE,
+            )
+            if plan == "skip":
+                timer.start("model")
+                timer.stop("skipped")
+                self._guide_cursor = len(snapshot)
+                self.root.after(0, lambda: self.update_ai_status("Unchanged, skipped."))
+                return
+            send_image, page_text, capture_note = followup_capture(
+                plan,
+                page_text,
+                capture_note,
+                repeated=bool(self._guide_page_key) and self._guide_page_key == turn_key,
+            )
+            if not send_image:
+                image = None
 
             if not (OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.is_available()):
                 self.root.after(
@@ -1620,19 +1783,39 @@ class SpeechTranscriptionApp:
 
             calling = f"Calling {provider_label(openai_config.model)}..."
             self.root.after(0, lambda message=calling: self.update_ai_status(message))
-            guide_stream = self._make_ai_stream_callback(source="guide", hide_blocks=True)
+            rapid = rapid_fire_mode(settings)
+            guide_stream = self._make_ai_stream_callback(
+                source="guide",
+                hide_blocks=True,
+                rapid=rapid,
+            )
+            timer.start("model")
             ai_content, cost = openai_analyzer.generate_screen_guide(
                 recent,
                 capture_note,
                 image=image,
                 stream_callback=guide_stream,
-                history=history,
-                memory=memory_text,
+                history="" if rapid else history,
+                memory="" if rapid else memory_text,
                 page_text=page_text,
-                attached=attached_text,
-                instructions=guide_instructions(allow_actions, MEMORY_ENABLED, FILE_EXCHANGE_ENABLED),
+                attached="" if rapid else attached_text,
+                instructions=guide_instructions(
+                    allow_actions,
+                    False if rapid else MEMORY_ENABLED,
+                    False if rapid else FILE_EXCHANGE_ENABLED,
+                    False if rapid else general_mode(settings),
+                    rapid,
+                ),
+                max_output_tokens=RAPID_FIRE_MAX_OUTPUT_TOKENS if rapid else None,
             )
+            image_note = "image" if image else "text"
+            timer.stop(f"{provider_label(openai_config.model)} {image_note} chars={len(ai_content or '')}")
+            self._guide_page_key = turn_key
+            self._guide_utterance = recent
             spoken, memories, actions, output_files = split_guide_reply(ai_content)
+            if rapid:
+                spoken = rapid_reply(spoken)
+                memories = []
             try:
                 remember(memories)
             except OSError as exc:
@@ -1648,6 +1831,7 @@ class SpeechTranscriptionApp:
 
             action_note = ""
             if allow_actions and actions:
+                timer.start("actions")
                 if page and page.attached and page.websocket_url:
                     try:
                         action_note = run_actions(page.websocket_url, actions)
@@ -1658,6 +1842,7 @@ class SpeechTranscriptionApp:
                     action_note = "Browser actions were not run because no page is attached."
                     if page and page.status:
                         action_note = f"{action_note} {page.status}"
+                timer.stop(str(len(actions)))
 
             with self._dialogue_lock:
                 self._dialogue.append((recent, spoken))
@@ -1694,6 +1879,8 @@ class SpeechTranscriptionApp:
                 lambda message=str(exc): self.show_ai_analysis(f"Guide turn failed: {message}"),
             )
         finally:
+            if timer is not None:
+                timer.finish()
             if not acquired:
                 return
             buffered = ""
@@ -1710,13 +1897,13 @@ class SpeechTranscriptionApp:
                     daemon=True,
                 ).start()
 
-    def _page_for_guide(self, _vision: str, model: str):
+    def _page_for_guide(self, model: str, *, include_image: bool = True):
         """Attach when the shared window is Edge or Chrome. Other windows stay screenshots."""
         window_id = self._shared_window_id or foreign_window_id(self._guide_exclude_id)
         if not window_id:
             return None
         self._shared_window_id = window_id
-        return look_at_browser(int(window_id), model)
+        return look_at_browser(int(window_id), model, include_image=include_image)
 
     def _capture_for_guide(self, vision: str):
         share_mode = "screen" if vision == VISION_SCREEN else "window"
@@ -1743,15 +1930,17 @@ class SpeechTranscriptionApp:
     def _speak_reply(self, text: str, generation: int):
         if generation != self._speech_generation:
             return
-        if is_lmstudio_model(openai_config.model):
+        if not TTS_USES_OPENAI and is_lmstudio_model(openai_config.model):
             self.root.after(0, lambda: self.update_ai_status("Voice stays off for LM Studio"))
             return
-        if not (OPENAI_AVAILABLE and openai_analyzer and openai_analyzer.client):
-            self.root.after(0, lambda: self.update_ai_status("Speech needs an API key"))
+        speaker = openai_analyzer.speech_client() if OPENAI_AVAILABLE and openai_analyzer else None
+        if speaker is None:
+            self.root.after(0, lambda: self.update_ai_status("Speech needs an OpenAI key"))
             return
 
         paused_for_speech = False
         self._speech_active = True
+        timer = None
         try:
             if self.is_listening and not self.is_paused:
                 self.is_paused = True
@@ -1763,17 +1952,37 @@ class SpeechTranscriptionApp:
             with self.audio_device_lock:
                 if generation != self._speech_generation:
                     return
-                wav_bytes = synthesize_speech(openai_analyzer.client, text)
-                if wav_bytes:
-                    self.root.after(0, self.increment_api_counter)
-                    play_wav_bytes(
-                        wav_bytes,
-                        lambda: generation != self._speech_generation or not speaks(self._current_assist()),
-                    )
+                parts = speech_parts(text)
+                if not parts:
+                    return
+                should_stop = lambda: (
+                    generation != self._speech_generation or not speaks(self._current_assist())
+                )
+                timer = TurnTimer("speech")
+                timer.start("synthesize")
+                clips = []
+                for part in parts:
+                    clip = synthesize_speech(speaker, part)
+                    if clip:
+                        clips.append(clip)
+                        self.root.after(0, self.increment_api_counter)
+                timer.stop(f"parts={len(clips)} chars={sum(len(part) for part in parts)}")
+                if clips:
+                    pause = 0
+                    if len(clips) > 1 and not rapid_fire_mode(self._current_assist()):
+                        pause = PART_PAUSE_SECONDS
+                    timer.start("play")
+                    for index, clip in enumerate(clips):
+                        if index and wait_between_parts(pause, should_stop):
+                            break
+                        play_wav_bytes(clip, should_stop)
+                    timer.stop()
         except Exception as exc:
             print(f"Speech playback failed: {exc}")
             self.root.after(0, lambda: self.update_ai_status("Speech playback failed"))
         finally:
+            if timer is not None:
+                timer.finish()
             self._speech_active = False
             if paused_for_speech and self._resume_after_speech and self.is_listening:
                 self.is_paused = False
@@ -1973,7 +2182,8 @@ class SpeechTranscriptionApp:
             self.ai_text.config(state=tk.DISABLED)
             self._follow_live(self.ai_text)
             if speak and speaks(self._current_assist()):
-                self._start_speech(incoming)
+                if speech_parts(incoming):
+                    self._start_speech(incoming)
         except Exception as e:
             print(f"Error displaying AI analysis: {e}")
     
@@ -2071,6 +2281,7 @@ class SpeechTranscriptionApp:
     
     def generate_ai_analysis(self, category, explanation):
         """Generate AI-driven analysis for a topic"""
+        timer = None
         try:
             # Update AI status to processing
             self.root.after(0, lambda: self.update_ai_status("Processing..."))
@@ -2083,11 +2294,15 @@ class SpeechTranscriptionApp:
                 calling = f"Calling {provider_label(openai_config.model)}..."
                 self.root.after(0, lambda message=calling: self.update_ai_status(message))
                 stream = self._make_ai_stream_callback()
+                timer = TurnTimer("analysis")
+                timer.start("model")
                 ai_content, cost = openai_analyzer.generate_topic_analysis(
                     category,
                     explanation,
                     stream_callback=stream,
                 )
+                timer.stop(f"topic {provider_label(openai_config.model)} {category}")
+                timer.finish()
                 if cost > 0:
                     # Schedule cost and API counter updates on main thread to prevent hanging
                     self.root.after(0, lambda: self.add_to_session_cost(cost))
@@ -2103,6 +2318,8 @@ class SpeechTranscriptionApp:
                 return ai_content, None
             
         except Exception as e:
+            if timer is not None:
+                timer.finish()
             print(f"AI analysis generation failed: {e}")
             self.root.after(0, lambda: self.update_ai_status("Error"))
             return f"AI analysis generation failed: {e}", None
@@ -2144,6 +2361,7 @@ class SpeechTranscriptionApp:
     
     def generate_ai_troubleshooting(self, question_text, suggestions):
         """Generate AI-driven troubleshooting analysis"""
+        timer = None
         try:
             # Update AI status to processing
             self.root.after(0, lambda: self.update_ai_status("Processing..."))
@@ -2155,11 +2373,15 @@ class SpeechTranscriptionApp:
                 print(f"openai_analyzer.is_available(): {openai_analyzer.is_available()}")
                 calling = f"Calling {provider_label(openai_config.model)}..."
                 self.root.after(0, lambda message=calling: self.update_ai_status(message))
+                timer = TurnTimer("analysis")
+                timer.start("model")
                 ai_content, cost = openai_analyzer.generate_troubleshooting_analysis(
                     question_text,
                     suggestions,
                     stream_callback=self._make_ai_stream_callback(),
                 )
+                timer.stop(f"troubleshooting {provider_label(openai_config.model)}")
+                timer.finish()
                 if cost > 0:
                     # Schedule cost and API counter updates on main thread to prevent hanging
                     self.root.after(0, lambda: self.add_to_session_cost(cost))
@@ -2175,6 +2397,8 @@ class SpeechTranscriptionApp:
                 return ai_content
             
         except Exception as e:
+            if timer is not None:
+                timer.finish()
             print(f"AI troubleshooting analysis generation failed: {e}")
             self.root.after(0, lambda: self.update_ai_status("Error"))
             return f"AI troubleshooting analysis generation failed: {e}"
@@ -2214,6 +2438,7 @@ class SpeechTranscriptionApp:
     
     def generate_contextual_ai_analysis(self, category, explanation, full_transcription, detected_keyword):
         """Generate AI analysis based on keywords AND full transcription context"""
+        timer = None
         try:
             print(f"DEBUG: generate_contextual_ai_analysis called with category='{category}', keyword='{detected_keyword}'")
             print(f"DEBUG: Full transcription: '{full_transcription}'")
@@ -2266,11 +2491,15 @@ class SpeechTranscriptionApp:
                 enhanced_explanation['session_context'] = f"This is part of an ongoing technical discussion session. Question type: {question_type}"
                 
                 stream = self._make_ai_stream_callback()
+                timer = TurnTimer("analysis")
+                timer.start("model")
                 ai_content, cost = openai_analyzer.generate_topic_analysis(
                     category,
                     enhanced_explanation,
                     stream_callback=stream,
                 )
+                timer.stop(f"context {provider_label(openai_config.model)} {category}")
+                timer.finish()
                 if cost > 0:
                     # Schedule cost and API counter updates on main thread to prevent hanging
                     self.root.after(0, lambda: self.add_to_session_cost(cost))
@@ -2290,6 +2519,8 @@ class SpeechTranscriptionApp:
                 return ai_content, None
             
         except Exception as e:
+            if timer is not None:
+                timer.finish()
             print(f"Contextual AI analysis generation failed: {e}")
             self.root.after(0, lambda: self.update_ai_status("Error"))
             return f"Contextual AI analysis generation failed: {e}", None
@@ -2939,6 +3170,8 @@ class SpeechTranscriptionApp:
         
         self.current_transcription = ""
         self._guide_cursor = 0
+        self._guide_page_key = ""
+        self._guide_utterance = ""
         with self._dialogue_lock:
             self._dialogue = []
         self._ai_sections = {"guide": "", "analysis": ""}
