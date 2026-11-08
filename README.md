@@ -35,7 +35,7 @@ Transcription, Voice, and Vision can be on together.
 | Transcription | Keyword highlights, topic cards, and the written analysis. This is the behavior the app had before voice and vision. |
 | Voice | Speaks the conversational reply. It does not read the keyword essay aloud. |
 | Vision | Off, Window, or Screen. One share source at a time. |
-| Control browser | Off until checked. Click, type, press, scroll, navigate, and choose an answer in an attached Edge or Chrome tab. Choose does not submit. |
+| Control browser | Off until checked. Click, type, press, scroll, navigate, and choose an answer in an attached Edge or Chrome tab. |
 | Non-IT | Off until checked. Answers the question in front of you and skips keyword topics and the troubleshooting essay. |
 | Rapid fire | Off until checked. Selects the answer shown on the page and does not explain it. |
 
@@ -111,7 +111,7 @@ Set `METRICS_ENABLED` to `False` in `metrics.py` to stop recording. The log file
 
 When the shared window is Edge or Chrome, and that browser was started with a debugging port, the guide reads the page text and a full-page image when the image fits the size rules. If the image is too large, the guide gets the text and a note that the image was too large. If the port is missing, the status line gives one relaunch command. A browser that is already open cannot be attached. Other windows stay screenshots.
 
-Control browser starts off. Set `BROWSER_CONTROL_ENABLED` to `False` in `browser_bridge.py` to remove the checkbox and the actions. Choose selects a visible answer, or the matching option in a dropdown. For more than one blank, the action carries the sentence, a vertical bar, and the answer. It does not submit, check the work, or exit the assignment. Set `CHOOSE_ENABLED` to `False` to ignore choose.
+Control browser starts off. Set `BROWSER_CONTROL_ENABLED` to `False` in `browser_bridge.py` to remove the checkbox and the actions. Choose selects a visible answer, or the matching option in a dropdown. For more than one blank, the action carries the sentence, a vertical bar, and the answer. Set `CHOOSE_ENABLED` to `False` to ignore choose.
 
 ## Training
 

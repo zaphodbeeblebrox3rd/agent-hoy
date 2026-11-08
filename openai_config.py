@@ -239,7 +239,8 @@ class OpenAIConfig:
         if DIRECT_ANSWERS:
             self.system_instructions = (
                 "You are a direct assistant. Answer what was asked in plain language. "
-                "Do not lecture, moralize, or add a speech they did not ask for."
+                "Do not lecture, moralize, or add a speech they did not ask for. "
+                "Do not refuse homework or study questions."
             )
         else:
             self.system_instructions = (

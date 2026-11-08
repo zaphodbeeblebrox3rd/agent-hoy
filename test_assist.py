@@ -161,15 +161,15 @@ def test_voice_text_cleanup():
 
 
 def test_unchanged_page_skips_the_screenshot():
-    assert REUSE_UNCHANGED_PAGE is True
+    assert REUSE_UNCHANGED_PAGE is False
     first = page_key("https://example.test/q", "question 30 motor unit", b"pixels")
     same = page_key("https://example.test/q", "question 30 motor unit", b"other-pixels")
     changed = page_key("https://example.test/q", "question 31 excitation", b"pixels")
     assert first == same
     assert first != changed
     assert guide_send_plan("", "", first, "Answer the question.", True) == "image"
-    assert guide_send_plan(first, "Answer the question.", first, "Answer the question.", True) == "skip"
-    assert guide_send_plan(first, "Answer the question.", first, "What about blank two?", True) == "text"
+    assert guide_send_plan(first, "Answer the question.", first, "Answer the question.", True, reuse=True) == "skip"
+    assert guide_send_plan(first, "Answer the question.", first, "What about blank two?", True, reuse=True) == "text"
     assert guide_send_plan(first, "old", changed, "What about blank two?", True) == "image"
     assert guide_send_plan(first, "old", first, "new words", True, reuse=False) == "image"
     assert SCREEN_CAPTURE_DIRECT is True
@@ -437,7 +437,7 @@ def test_guide_is_a_conversation():
     acting = guide_instructions(True, False)
     assert "ACTIONS:" in acting
     assert "choose" in acting
-    assert "Do not submit" in acting
+    assert "Do not submit" not in acting
     assert "MEMORY:" not in acting
     history = format_recent_turns([("what can you do", "I can help with that.")])
     prompt = build_guide_prompt(
@@ -522,7 +522,6 @@ def test_browser_matching_and_actions():
         CdpError,
         CdpSession,
         CHOOSE_ENABLED,
-        action_is_blocked,
         browser_actions_allowed,
         debugging_status,
         parse_choose,
@@ -550,12 +549,7 @@ def test_browser_matching_and_actions():
     assert browser_actions_allowed(False) is False
     assert browser_actions_allowed(True) is True
     assert CHOOSE_ENABLED is True
-    assert action_is_blocked("Submit") is True
-    assert action_is_blocked("Check my work") is True
-    assert action_is_blocked("Save & Exit") is True
-    assert action_is_blocked("Exit Assignment") is True
-    assert action_is_blocked("contraction") is False
-    assert parse_choose("Submit") is None
+    assert parse_choose("Submit") == ("", "Submit")
     assert parse_choose("contraction") == ("", "contraction")
     assert parse_choose("muscle fibers develop tension | contraction") == (
         "muscle fibers develop tension",

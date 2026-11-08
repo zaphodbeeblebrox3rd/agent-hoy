@@ -289,6 +289,7 @@ class SpeechTranscriptionApp:
         self._guide_cursor = 0
         self._guide_page_key = ""
         self._guide_utterance = ""
+        self._last_guide_spoken = ""
         self._dialogue = []
         self._dialogue_lock = threading.Lock()
         self._attached_blocks = []
@@ -1613,6 +1614,11 @@ class SpeechTranscriptionApp:
             new_text = snapshot[self._guide_cursor :].strip()
             if not new_text:
                 return
+            if " ".join(new_text.casefold().split()) == " ".join(
+                (self._guide_utterance or "").casefold().split()
+            ):
+                self._guide_cursor = len(snapshot)
+                return
 
             current_time = time.time()
             if current_time - self.last_guide_time < self.ai_analysis_throttle_seconds:
@@ -1816,6 +1822,15 @@ class SpeechTranscriptionApp:
             if rapid:
                 spoken = rapid_reply(spoken)
                 memories = []
+            normalized_spoken = " ".join(spoken.casefold().split())
+            if normalized_spoken and normalized_spoken == self._last_guide_spoken:
+                self._guide_cursor = len(snapshot)
+                self.root.after(
+                    0, lambda: self.update_ai_status("Same answer as the last turn. Suppressed.")
+                )
+                return
+            if normalized_spoken:
+                self._last_guide_spoken = normalized_spoken
             try:
                 remember(memories)
             except OSError as exc:
@@ -3172,6 +3187,7 @@ class SpeechTranscriptionApp:
         self._guide_cursor = 0
         self._guide_page_key = ""
         self._guide_utterance = ""
+        self._last_guide_spoken = ""
         with self._dialogue_lock:
             self._dialogue = []
         self._ai_sections = {"guide": "", "analysis": ""}

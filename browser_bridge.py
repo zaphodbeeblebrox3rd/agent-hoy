@@ -20,13 +20,6 @@ from image_payload import MAX_ENCODED_BYTES, PreparedImage, prepare_encoded
 BROWSER_CONTROL_ENABLED = True
 # Rollback: set False to ignore choose. Other browser actions stay.
 CHOOSE_ENABLED = True
-_BLOCKED_ACTIONS = (
-    "submit",
-    "check my work",
-    "save & exit",
-    "save and exit",
-    "exit assignment",
-)
 DEBUG_PORT = 9222
 PAGE_TEXT_CHARS = 20_000
 WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
@@ -65,24 +58,16 @@ def browser_actions_allowed(browser_control: bool) -> bool:
     return BROWSER_CONTROL_ENABLED and bool(browser_control)
 
 
-def action_is_blocked(text: str) -> bool:
-    """True for submit, check my work, save and exit, and exit assignment."""
-    folded = " ".join((text or "").casefold().split())
-    if not folded:
-        return False
-    return any(phrase in folded for phrase in _BLOCKED_ACTIONS)
-
-
 def parse_choose(argument: str) -> tuple[str, str] | None:
-    """Return the sentence anchor and the answer. None when the words are refused."""
+    """Return the sentence anchor and the answer. None when the text is empty."""
     text = " ".join((argument or "").split()).strip()
-    if not text or action_is_blocked(text):
+    if not text:
         return None
     if "|" in text:
         anchor, answer = text.split("|", 1)
         anchor = " ".join(anchor.split()).strip()
         answer = " ".join(answer.split()).strip()
-        if not anchor or not answer or action_is_blocked(anchor) or action_is_blocked(answer):
+        if not anchor or not answer:
             return None
         return anchor, answer
     return "", text
@@ -644,15 +629,13 @@ def _json_get(url: str, timeout: float):
 
 
 def _choose_expression(anchor: str, answer: str) -> str:
-    """Script that selects one answer and does not submit the page."""
+    """Script that selects one answer on the page."""
     script = """
 (() => {
   const anchor = __ANCHOR__;
   const answer = __ANSWER__;
-  const blocked = __BLOCKED__;
   const norm = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-  const refused = (value) => blocked.some((phrase) => norm(value).includes(phrase));
-  if (!answer || refused(answer)) return 'refused';
+  if (!answer) return 'refused';
 
   const docs = [];
   const visit = (win) => {
@@ -696,7 +679,7 @@ def _choose_expression(anchor: str, answer: str) -> str:
     if (!pool.length) return '';
     pool.sort((a, b) => scopeLength(a) - scopeLength(b));
     const option = [...pool[0].options].find((item) => norm(item.text) === answer);
-    if (!option || refused(option.text)) return 'refused';
+    if (!option) return 'refused';
     option.selected = true;
     pool[0].value = option.value;
     pool[0].dispatchEvent(new Event('input', {bubbles: true}));
@@ -709,11 +692,9 @@ def _choose_expression(anchor: str, answer: str) -> str:
     const matches = rows.filter((el) => textOf(el) === answer && inScope(el));
     if (!matches.length) return '';
     const row = matches[0];
-    if (refused(textOf(row))) return 'refused';
     const input = row.querySelector('input[type="radio"], input[type="checkbox"]');
     if (input && input.checked) return 'chose ' + answer;
     const clickable = row.querySelector('._clickable, label') || input || row;
-    if (refused(textOf(clickable))) return 'refused';
     clickable.click();
     if (input && !input.checked) {
       input.checked = true;
@@ -794,7 +775,6 @@ def _choose_expression(anchor: str, answer: str) -> str:
     return (
         script.replace("__ANCHOR__", json.dumps(" ".join(anchor.casefold().split())))
         .replace("__ANSWER__", json.dumps(" ".join(answer.casefold().split())))
-        .replace("__BLOCKED__", json.dumps(list(_BLOCKED_ACTIONS)))
     )
 
 
@@ -864,8 +844,6 @@ def _run_one(session: CdpSession, verb: str, argument: str) -> str:
             return str(detail.get("text") or "choose failed")[:160]
         return str((result.get("result") or {}).get("value") or "not found")
     if verb == "click":
-        if action_is_blocked(argument):
-            return "refused"
         label = argument[:200]
         expression = (
             "(() => {"

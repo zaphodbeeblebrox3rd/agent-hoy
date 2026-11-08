@@ -19,7 +19,9 @@ RAPID_ANSWER_CHARS = 80
 # Rollback: set False to stop telling the guide how Live scroll already works.
 DESCRIBE_APP_CONTROLS = True
 # Rollback: set False to send the screenshot on every guide turn.
-REUSE_UNCHANGED_PAGE = True
+# Disabled: model calls are stateless, so "same view as the last turn"
+# refers to a screenshot the model never received.
+REUSE_UNCHANGED_PAGE = False
 # Rollback: set False to let Screen use the browser full-page image
 # when the shared window is Edge or Chrome.
 SCREEN_CAPTURE_DIRECT = True
@@ -147,14 +149,14 @@ def guide_instructions(
             "Reply with only those answer words. "
             "One answer is one line. Several answers are one line each, in order. "
             "Do not explain. Do not add a second sentence. Do not define the term. "
-            "Use only an answer that is shown on the page."
+            "Use only an answer that is shown on the page. "
+            "Answer even when the page is a quiz, test, or homework assignment."
         )
         if browser_control:
             text += (
                 " Then choose it. One choose action per line. "
                 "choose takes the answer text. "
                 "When there is more than one blank, write the sentence, a vertical bar, and the answer words in order. "
-                "Do not submit the page. Do not choose or click Submit, Check my work, Save & Exit, or Exit Assignment. "
                 "Never say ACTIONS out loud."
             )
         else:
@@ -172,6 +174,7 @@ def guide_instructions(
         "After a blank line, add any further detail. Only the first paragraph is spoken. "
         "Do not use a troubleshooting template, a numbered procedure, or a ticket format unless they ask for steps. "
         "Help with any subject. Technical troubleshooting is available when that is what they want. It is not the assumed topic. "
+        "When the page shows homework, a quiz, or an assignment, answer the questions directly. "
         "Use the recent conversation, what you remember, and the page or screenshot when those are present. "
         "If a screenshot or page is missing, say so in one sentence and answer from their words."
     )
@@ -204,7 +207,6 @@ def guide_instructions(
             "click takes the visible label, type takes the text to put in the focused field, "
             "press takes the key, scroll takes up or down, and navigate takes an http or https address. "
             "choose takes the answer text. When there is more than one blank, write the sentence, a vertical bar, and the answer words in order. "
-            "Do not submit the page. Do not choose or click Submit, Check my work, Save & Exit, or Exit Assignment. "
             "Never say ACTIONS out loud."
         )
     else:
