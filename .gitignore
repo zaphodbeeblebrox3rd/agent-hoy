@@ -12,6 +12,8 @@ metrics/
 training/
 # Files the assistant writes on request
 output/
+# Per-day session logs
+transcripts/
 # Local config overrides (shipped defaults are conf/*.conf.example)
 conf/*.conf
 .install-profile

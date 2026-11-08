@@ -107,6 +107,10 @@ Each guide, speech, transcription, and analysis turn appends one line to `metric
 
 Set `METRICS_ENABLED` to `False` in `metrics.py` to stop recording. The log file stays.
 
+## Session log
+
+Each spoken or typed line and each guide or analysis reply appends one line to `transcripts/YYYY-MM-DD.log`. The directory is gitignored. Set `SESSION_LOG_ENABLED` to `False` in `main.py` to stop writing.
+
 ## Browser pages
 
 When the shared window is Edge or Chrome, and that browser was started with a debugging port, the guide reads the page text and a full-page image when the image fits the size rules. If the image is too large, the guide gets the text and a note that the image was too large. If the port is missing, the status line gives one relaunch command. A browser that is already open cannot be attached. Other windows stay screenshots.

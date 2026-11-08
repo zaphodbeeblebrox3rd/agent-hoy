@@ -102,6 +102,24 @@ ALWAYS_SHOW_BOOT_PROCESS = False
 TRAINING_WINDOW_ONTOP = True
 # Rollback: set False to keep the top pane as Live Transcription without typed entry.
 USER_ENTRY_ENABLED = True
+# Rollback: set False to stop writing transcripts/YYYY-MM-DD.log.
+SESSION_LOG_ENABLED = True
+SESSION_LOG_DIR = "transcripts"
+
+
+def log_session_line(role: str, text: str) -> None:
+    """Append one entry to today's session log. Never raises."""
+    cleaned = " ".join((text or "").split())
+    if not SESSION_LOG_ENABLED or not cleaned:
+        return
+    try:
+        os.makedirs(SESSION_LOG_DIR, exist_ok=True)
+        now = datetime.now()
+        path = os.path.join(SESSION_LOG_DIR, now.strftime("%Y-%m-%d") + ".log")
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(f"[{now.strftime('%H:%M:%S')}] {role}: {cleaned}\n")
+    except OSError as exc:
+        print(f"Could not write session log: {exc}")
 
 
 def analysis_continues(previous: str, current: str) -> bool:
@@ -1333,6 +1351,7 @@ class SpeechTranscriptionApp:
 
         # Update current transcription
         self.current_transcription += text + " "
+        log_session_line("User", text)
     
     def schedule_delayed_analysis(self):
         """Schedule AI analysis after question completion timeout"""
@@ -1831,6 +1850,7 @@ class SpeechTranscriptionApp:
                 return
             if normalized_spoken:
                 self._last_guide_spoken = normalized_spoken
+            log_session_line("Assistant", spoken)
             try:
                 remember(memories)
             except OSError as exc:
@@ -2323,6 +2343,7 @@ class SpeechTranscriptionApp:
                     self.root.after(0, lambda: self.add_to_session_cost(cost))
                     self.root.after(0, lambda: self.increment_api_counter())
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
+                log_session_line("Analysis", ai_content)
                 return ai_content, stream.block_id
             else:
                 # Fallback to template-based analysis
@@ -2330,6 +2351,7 @@ class SpeechTranscriptionApp:
                 self.root.after(0, lambda: self.update_ai_status("Using Template"))
                 ai_content = self._get_template_ai_analysis(category, explanation)
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
+                log_session_line("Analysis", ai_content)
                 return ai_content, None
             
         except Exception as e:
@@ -2522,6 +2544,7 @@ class SpeechTranscriptionApp:
                 
                 # Update status to completed
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
+                log_session_line("Analysis", ai_content)
                 return ai_content, stream.block_id
             else:
                 # Fallback to template-based analysis with context and question type
@@ -2531,6 +2554,7 @@ class SpeechTranscriptionApp:
                 self.root.after(0, lambda: self.update_ai_status("Using Template"))
                 ai_content = self._get_contextual_template_analysis(category, explanation, full_transcription, detected_keyword, question_type)
                 self.root.after(0, lambda: self.update_ai_status("Completed"))
+                log_session_line("Analysis", ai_content)
                 return ai_content, None
             
         except Exception as e:
