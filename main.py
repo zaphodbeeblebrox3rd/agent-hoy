@@ -123,6 +123,12 @@ def log_session_line(role: str, text: str) -> None:
         print(f"Could not write session log: {exc}")
 
 
+def _utterance_is_repetition(text: str) -> bool:
+    """A hallucinated run of one repeated token is not worth a model call."""
+    words = re.findall(r"[a-z0-9]+", (text or "").casefold())
+    return len(words) >= 8 and len(set(words)) <= 2
+
+
 def analysis_continues(previous: str, current: str) -> bool:
     """True when current is the same answer growing, not a new one.
 
@@ -1640,6 +1646,9 @@ class SpeechTranscriptionApp:
             ):
                 self._guide_cursor = len(snapshot)
                 return
+            if _utterance_is_repetition(new_text):
+                self._guide_cursor = len(snapshot)
+                return
 
             current_time = time.time()
             if current_time - self.last_guide_time < self.ai_analysis_throttle_seconds:
@@ -1769,7 +1778,7 @@ class SpeechTranscriptionApp:
                         capture_note = f"{capture_note} No browser tab is attached."
                 timer.stop(capture_metric)
 
-            if image is not None and not page_text.strip():
+            if image is not None:
                 timer.start("ocr")
                 screen_text = ocr_png(image[0])
                 timer.stop(f"chars={len(screen_text)}" if screen_text else "none")
@@ -1782,6 +1791,7 @@ class SpeechTranscriptionApp:
                 image_bytes,
                 screen=screen_direct and capture_metric.startswith("Screen"),
             )
+            same_page = bool(self._guide_page_key) and self._guide_page_key == turn_key
             plan = guide_send_plan(
                 self._guide_page_key,
                 self._guide_utterance,
@@ -1800,7 +1810,7 @@ class SpeechTranscriptionApp:
                 plan,
                 page_text,
                 capture_note,
-                repeated=bool(self._guide_page_key) and self._guide_page_key == turn_key,
+                repeated=same_page,
             )
             if not send_image:
                 image = None
@@ -1833,7 +1843,7 @@ class SpeechTranscriptionApp:
                 capture_note,
                 image=image,
                 stream_callback=guide_stream,
-                history="" if rapid else history,
+                history=history if same_page else "",
                 memory="" if rapid else memory_text,
                 page_text=page_text,
                 attached="" if rapid else attached_text,
