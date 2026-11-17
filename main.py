@@ -29,6 +29,7 @@ from assist_mode import (
     NON_IT_ENABLED,
     RAPID_FIRE_ENABLED,
     RAPID_FIRE_MAX_OUTPUT_TOKENS,
+    RAPID_NEEDS_CAPTURE,
     DIALOGUE_TURNS,
     GUIDE_TRANSCRIPT_CHARS,
     REUSE_UNCHANGED_PAGE,
@@ -200,6 +201,7 @@ from openai_config import (
     save_persisted_model,
 )
 from screen_capture import capture_frame, capture_window_by_id, foreign_window_id
+from screen_ocr import ocr_png
 from train_mode import (
     STABLE_SECONDS,
     evaluate_session,
@@ -1663,6 +1665,7 @@ class SpeechTranscriptionApp:
             image = None
             page = None
             page_text = ""
+            screen_text = ""
             capture_note = "No screenshot. Voice only. No browser tab is attached."
             capture_metric = "none"
             screen_direct = settings.vision == VISION_SCREEN and SCREEN_CAPTURE_DIRECT
@@ -1766,6 +1769,11 @@ class SpeechTranscriptionApp:
                         capture_note = f"{capture_note} No browser tab is attached."
                 timer.stop(capture_metric)
 
+            if image is not None and not page_text.strip():
+                timer.start("ocr")
+                screen_text = ocr_png(image[0])
+                timer.stop(f"chars={len(screen_text)}" if screen_text else "none")
+
             page_url = page.url if page is not None else ""
             image_bytes = image[0] if image else None
             turn_key = capture_identity(
@@ -1808,7 +1816,12 @@ class SpeechTranscriptionApp:
 
             calling = f"Calling {provider_label(openai_config.model)}..."
             self.root.after(0, lambda message=calling: self.update_ai_status(message))
-            rapid = rapid_fire_mode(settings)
+            rapid = rapid_fire_mode(settings) and (
+                not RAPID_NEEDS_CAPTURE
+                or image is not None
+                or bool(page_text.strip())
+                or bool(screen_text.strip())
+            )
             guide_stream = self._make_ai_stream_callback(
                 source="guide",
                 hide_blocks=True,
@@ -1824,6 +1837,7 @@ class SpeechTranscriptionApp:
                 memory="" if rapid else memory_text,
                 page_text=page_text,
                 attached="" if rapid else attached_text,
+                screen_text=screen_text,
                 instructions=guide_instructions(
                     allow_actions,
                     False if rapid else MEMORY_ENABLED,

@@ -480,6 +480,7 @@ class OpenAIAnalyzer:
         attached: str = "",
         instructions: Optional[str] = None,
         max_output_tokens: Optional[int] = None,
+        screen_text: str = "",
     ) -> tuple[str, float]:
         """Conversational reply. image is (bytes, mime, detail) or None."""
         if not self.is_available():
@@ -494,6 +495,7 @@ class OpenAIAnalyzer:
             memory=memory,
             page_text=page_text,
             attached=attached,
+            screen_text=screen_text,
         )
         text, cost = self._make_api_call(
             prompt,

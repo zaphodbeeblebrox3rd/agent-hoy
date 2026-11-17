@@ -41,7 +41,7 @@ Transcription, Voice, and Vision can be on together.
 
 Window shares the foreground window, or the last window that was in front of this app. This app's own window is skipped. Screen shares the display under the pointer, including when an Edge or Chrome tab is attached. The page text from that tab is still included. Set `SCREEN_CAPTURE_DIRECT` to `False` in `assist_mode.py` to send the browser full-page image for Screen again. A later turn on the same view leaves the screenshot out and keeps the page text.
 
-Screenshots go out at the captured resolution. The image is reduced only when the API would reject it, or when the file is still too large after a high-quality JPEG at the same pixel size.
+Screenshots go out at the captured resolution. The image is reduced only when the API would reject it, when the file is still too large after a high-quality JPEG at the same pixel size, or when the model's server is known to shrink the upload anyway. When a screenshot is the only view, Windows local OCR adds the screen text to the prompt so the model is not reading pixels for plain text.
 
 Rapid fire replies with the answer words only and, when Control browser is on, chooses them. It does not add an explanation, and several answers are spoken with no pause between them. Set `RAPID_FIRE_ENABLED` to `False` in `assist_mode.py` to remove that checkbox.
 
@@ -113,7 +113,7 @@ Each spoken or typed line and each guide or analysis reply appends one line to `
 
 ## Browser pages
 
-When the shared window is Edge or Chrome, and that browser was started with a debugging port, the guide reads the page text and a full-page image when the image fits the size rules. If the image is too large, the guide gets the text and a note that the image was too large. If the port is missing, the status line gives one relaunch command. A browser that is already open cannot be attached. Other windows stay screenshots.
+When the shared window is Edge or Chrome, and that browser was started with a debugging port, the guide reads the page text and a full-page image when the image fits the size rules. If the image is too large, the guide gets the text and a note that the image was too large. If the port is missing, the status line gives one relaunch command. `start_edge_debug.bat` starts Edge with the port on Windows; Edge must be fully closed first. A browser that is already open cannot be attached. Other windows stay screenshots.
 
 Control browser starts off. Set `BROWSER_CONTROL_ENABLED` to `False` in `browser_bridge.py` to remove the checkbox and the actions. Choose selects a visible answer, or the matching option in a dropdown. For more than one blank, the action carries the sentence, a vertical bar, and the answer. Set `CHOOSE_ENABLED` to `False` to ignore choose.
 
@@ -264,6 +264,8 @@ More detail: [OPENAI_SETUP.md](OPENAI_SETUP.md), [OFFLINE_SETUP.md](OFFLINE_SETU
 | `DESCRIBE_APP_CONTROLS` | `assist_mode.py` | The guide is not told how Live scroll works. |
 | `REUSE_UNCHANGED_PAGE` | `assist_mode.py` | Every guide turn sends the screenshot again. |
 | `SCREEN_CAPTURE_DIRECT` | `assist_mode.py` | Screen uses the browser full-page image when a tab is attached. |
+| `RAPID_NEEDS_CAPTURE` | `assist_mode.py` | Rapid fire answers even with no screenshot or page text. |
+| `OCR_ENABLED` | `screen_ocr.py` | No local OCR text is read from screenshots. |
 | `SPEAK_BRIEF_ANSWER` | `voice_output.py` | The voice reads the whole on-screen reply. |
 | `BRIEF_SPOKEN_SENTENCES` | `voice_output.py` | Sentences spoken from a single answer. `2` adds a second sentence. |
 | `BRIEF_PART_CHARS` | `voice_output.py` | Longest line that is still spoken as its own part. |

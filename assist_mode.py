@@ -25,6 +25,9 @@ REUSE_UNCHANGED_PAGE = False
 # Rollback: set False to let Screen use the browser full-page image
 # when the shared window is Edge or Chrome.
 SCREEN_CAPTURE_DIRECT = True
+# Rollback: set False to let Rapid fire answer with no screenshot and no
+# page text. With nothing to look at the model parrots the user's words.
+RAPID_NEEDS_CAPTURE = True
 
 VISION_OFF = "off"
 VISION_WINDOW = "window"
@@ -232,6 +235,7 @@ def build_guide_prompt(
     memory: str = "",
     page_text: str = "",
     attached: str = "",
+    screen_text: str = "",
 ) -> str:
     """New utterance plus recent turns, memory, attached files, and the page."""
     parts = []
@@ -244,6 +248,11 @@ def build_guide_prompt(
         parts.append("Attached files:\n" + attached.strip())
     if page_text.strip():
         parts.append("Full page text:\n" + page_text.strip())
+    if screen_text.strip():
+        parts.append(
+            "Text read from the screenshot by local OCR. It may contain mistakes:\n"
+            + screen_text.strip()
+        )
     parts.append("Capture:\n" + (capture_note or "").strip())
     return "\n\n".join(parts) + "\n"
 

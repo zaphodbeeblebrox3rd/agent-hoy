@@ -66,3 +66,5 @@ typing-inspection==0.4.2
     # via pydantic
 urllib3==2.7.0
     # via requests
+winsdk==1.0.0b10 ; sys_platform == 'win32'
+    # via agent-hoy

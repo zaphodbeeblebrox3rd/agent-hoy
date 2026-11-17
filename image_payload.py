@@ -16,6 +16,13 @@ MAX_PATCHES = 30_000
 # Far under the 512 MB request cap, including base64 expansion.
 MAX_ENCODED_BYTES = 80 * 1024 * 1024
 JPEG_QUALITIES = (95, 85, 75)
+# A PNG over this is usually several times the equivalent JPEG, which costs
+# upload and server decode time for no accuracy gain on a screenshot.
+PNG_SOFT_CAP_BYTES = 768 * 1024
+# Local send caps for models whose servers downscale the upload anyway.
+# Shrinking before upload saves transfer and tile time; the server would
+# only throw the extra pixels away. Keyed by model id prefix.
+_LOCAL_SEND_CAPS = {"grok-": 1600}
 
 
 @dataclass(frozen=True)
@@ -144,6 +151,14 @@ def shrink_to_long_side(data: bytes, long_side: int, model: str) -> PreparedImag
     return PreparedImage(encoded, mime, limits.detail, working.size[0], working.size[1], True)
 
 
+def _send_cap(model: str) -> int | None:
+    name = (model or "").lower()
+    for prefix, cap in _LOCAL_SEND_CAPS.items():
+        if name.startswith(prefix):
+            return cap
+    return None
+
+
 def _prepare_image(
     image: Image.Image,
     model: str,
@@ -157,6 +172,18 @@ def _prepare_image(
     resized = False
     if target is not None and target != (width, height):
         working = working.resize(target, Image.Resampling.LANCZOS)
+        resized = True
+        source_bytes = None
+
+    cap = _send_cap(model)
+    width, height = working.size
+    if cap and max(width, height) > cap:
+        scale = cap / max(width, height)
+        new_size = (
+            max(1, int(width * scale)),
+            max(1, int(height * scale)),
+        )
+        working = working.resize(new_size, Image.Resampling.LANCZOS)
         resized = True
         source_bytes = None
 
@@ -187,13 +214,19 @@ def _encode_within_limit(
 ) -> tuple[bytes, str, Image.Image, bool]:
     """PNG, then JPEG at the same size, then shrink only if both are too large."""
     png_bytes, _mime = _encode_png(image)
-    if len(png_bytes) <= max_encoded_bytes:
+    png_fits = len(png_bytes) <= max_encoded_bytes
+    if png_fits and len(png_bytes) <= PNG_SOFT_CAP_BYTES:
         return png_bytes, "image/png", image, False
 
     for quality in JPEG_QUALITIES:
         jpeg_bytes = _encode_jpeg(image, quality)
         if len(jpeg_bytes) <= max_encoded_bytes:
+            if png_fits and len(jpeg_bytes) > len(png_bytes):
+                return png_bytes, "image/png", image, False
             return jpeg_bytes, "image/jpeg", image, False
+
+    if png_fits:
+        return png_bytes, "image/png", image, False
 
     working = image
     shrunk = False
