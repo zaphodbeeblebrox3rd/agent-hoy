@@ -12,7 +12,9 @@ MAX_MEMORY_LINES = 100
 MAX_MEMORY_LINE_CHARS = 240
 MAX_ACTIONS = 8
 
-_ACTION_VERBS = ("click", "type", "press", "scroll", "navigate", "choose")
+_ACTION_VERBS = ("click", "type", "press", "scroll", "navigate", "choose", "match", "move")
+# Verbs that need no argument, e.g. a bare "advance" line.
+_NO_ARG_VERBS = ("advance",)
 _HEADER = (
     "# Live assistant memory. This folder is gitignored.\n"
     "# One fact per bullet. The assistant reloads this file on the next turn.\n\n"
@@ -148,11 +150,14 @@ def _clean_fact(line: str) -> str:
 
 
 def _parse_action(line: str) -> tuple[str, str] | None:
-    if ":" not in line:
-        return None
-    verb, argument = line.split(":", 1)
+    if ":" in line:
+        verb, argument = line.split(":", 1)
+    else:
+        verb, _, argument = line.partition(" ")
     verb = verb.strip().lower()
     argument = argument.strip()
+    if verb in _NO_ARG_VERBS:
+        return verb, argument
     if verb not in _ACTION_VERBS or not argument:
         return None
     return verb, argument

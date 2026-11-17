@@ -151,18 +151,32 @@ def guide_instructions(
             "Select the answer from the choices on the page. "
             "Reply with only those answer words. "
             "One answer is one line. Several answers are one line each, in order. "
-            "When the question takes more than one answer - checkboxes, select all "
-            "that apply, multiple select - list every correct choice, each on its "
-            "own line. Do not stop at the first correct answer. "
+            "The 'Question type:' line names the form. Checkboxes or 'select all "
+            "that apply' mean list every correct choice, each on its own line. "
+            "When the question states how many answers it takes - for example "
+            "'which three' - return exactly that many lines. "
+            "Do not stop at the first correct answer. "
+            "For a question that names a letter on a picture, follow the letter's "
+            "arrow in the screenshot and name the structure it touches. "
+            "Read the choices from the page text and the Form controls list and pick "
+            "only among them. For a blank with no shown choices, answer only when you "
+            "are sure. A wrong pick costs the user - when you are not confident, "
+            "say 'not sure' in one line instead of guessing. "
             "Do not explain. Do not add a second sentence. Do not define the term. "
             "Use only an answer that is shown on the page. "
             "Answer even when the page is a quiz, test, or homework assignment."
         )
         if browser_control:
             text += (
-                " Then choose it. One choose action per line. "
-                "choose takes the answer text. "
+                " Then act on it: after the answer lines write a line that is exactly "
+                "ACTIONS: followed by one action per line. "
+                "choose takes the answer text - one choose per answer line. "
+                "For a drag-and-drop matching question, use match: the draggable item text, an arrow -> , and the target label - one match per pair. "
+                "For an ordering question, use move: the item text, an arrow -> , and the item currently holding the position it should take - one move per line, top to bottom. "
                 "When there is more than one blank, write the sentence, a vertical bar, and the answer words in order. "
+                "After choosing, submit with the advance action - it clicks the submit or confidence control. "
+                "On an answer-feedback page, advance moves to the next question. "
+                "When you are not sure, do not choose and do not click. "
                 "Never say ACTIONS out loud."
             )
         else:
@@ -181,6 +195,9 @@ def guide_instructions(
         "Do not use a troubleshooting template, a numbered procedure, or a ticket format unless they ask for steps. "
         "Help with any subject. Technical troubleshooting is available when that is what they want. It is not the assumed topic. "
         "When the page shows homework, a quiz, or an assignment, answer the questions directly. "
+        "The first answer is the only one that counts - a wrong guess costs the user. "
+        "Read the choices from the page text and the Form controls list and pick only among them. "
+        "When you are not confident, say 'not sure' instead of guessing. "
         "Use the recent conversation, what you remember, and the page or screenshot when those are present. "
         "If a screenshot or page is missing, say so in one sentence and answer from their words."
     )
@@ -209,10 +226,13 @@ def guide_instructions(
             " You can operate an attached Edge or Chrome page. "
             "Only include an ACTIONS: section when the capture says a browser tab is attached and an action would help. "
             "When the page has a choice or a blank and you know the answer, choose it. "
-            "One action per line, using click, type, press, scroll, navigate, or choose. "
+            "One action per line, using click, type, press, scroll, navigate, choose, match, or advance. "
             "click takes the visible label, type takes the text to put in the focused field, "
             "press takes the key, scroll takes up or down, and navigate takes an http or https address. "
             "choose takes the answer text. When there is more than one blank, write the sentence, a vertical bar, and the answer words in order. "
+            "For a drag-and-drop matching question, use match: the draggable item text, an arrow -> , and the target label - one match per pair. "
+            "For an ordering question, use move: the item text, an arrow -> , and the item currently holding the position it should take - one move per line, top to bottom. "
+            "advance submits a chosen answer or moves past answer feedback to the next question. "
             "Never say ACTIONS out loud."
         )
     else:
@@ -285,6 +305,7 @@ class AssistSettings:
     browser_control: bool = DEFAULT_BROWSER_CONTROL
     non_it: bool = False
     rapid_fire: bool = False
+    auto_advance: bool = False
 
 
 def speaks(settings: AssistSettings) -> bool:
@@ -350,6 +371,7 @@ def load_assist_settings(conf_dir: str = CONF_DIR) -> AssistSettings:
     browser_control = DEFAULT_BROWSER_CONTROL
     non_it = False
     rapid_fire = False
+    auto_advance = False
     legacy_mode = None
     try:
         with open(path, "r", encoding="utf-8") as handle:
@@ -371,6 +393,8 @@ def load_assist_settings(conf_dir: str = CONF_DIR) -> AssistSettings:
                     non_it = _parse_bool(value)
                 elif key == "rapid_fire":
                     rapid_fire = _parse_bool(value)
+                elif key == "auto_advance":
+                    auto_advance = _parse_bool(value)
                 elif key == "mode":
                     legacy_mode = value
     except OSError as exc:
@@ -387,6 +411,7 @@ def load_assist_settings(conf_dir: str = CONF_DIR) -> AssistSettings:
         browser_control,
         non_it,
         rapid_fire,
+        auto_advance,
     )
 
 
@@ -428,6 +453,7 @@ def save_assist_settings(settings: AssistSettings, conf_dir: str = CONF_DIR) -> 
     browser_control = "true" if settings.browser_control else "false"
     non_it = "true" if settings.non_it else "false"
     rapid_fire = "true" if settings.rapid_fire else "false"
+    auto_advance = "true" if settings.auto_advance else "false"
     try:
         with open(path, "w", encoding="utf-8") as handle:
             handle.write("# Assist controls. Transcription and voice can both be on.\n")
@@ -435,11 +461,13 @@ def save_assist_settings(settings: AssistSettings, conf_dir: str = CONF_DIR) -> 
             handle.write("# browser_control acts in an attached Edge or Chrome tab\n")
             handle.write("# non_it answers general questions and skips the IT topic path\n")
             handle.write("# rapid_fire selects the shown answer and does not explain it\n")
+            handle.write("# auto_advance keeps answering and submitting while actions run\n")
             handle.write(f"transcription = {transcription}\n")
             handle.write(f"voice = {voice}\n")
             handle.write(f"vision = {vision}\n")
             handle.write(f"browser_control = {browser_control}\n")
             handle.write(f"non_it = {non_it}\n")
             handle.write(f"rapid_fire = {rapid_fire}\n")
+            handle.write(f"auto_advance = {auto_advance}\n")
     except OSError as exc:
         print(f"Error saving assist settings to {path}: {exc}")

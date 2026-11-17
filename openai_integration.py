@@ -39,6 +39,42 @@ _ERROR_REPLY_PREFIXES = (
 )
 
 
+def fetch_credit_balance(model: str) -> Optional[str]:
+    """Remaining-credit text for the model's provider, or None if unavailable.
+
+    OpenAI has no balance endpoint for regular API keys (Admin keys read spend,
+    not balance). xAI exposes prepaid balance through the management API, which
+    needs a management key - not the inference API key.
+    """
+    if is_lmstudio_model(model):
+        return "local"
+    if not is_grok_model(model):
+        return None
+    mgmt = getattr(openai_config, "xai_management_key", None)
+    if not mgmt:
+        return "needs mgmt key"
+    api_key = openai_config.xai_api_key
+    if not api_key:
+        return None
+    try:
+        request = urllib.request.Request(
+            f"{XAI_BASE_URL}/api-key",
+            headers={"Authorization": f"Bearer {api_key}"},
+        )
+        team = json.loads(urllib.request.urlopen(request, timeout=8).read()).get("team_id")
+        if not team:
+            return None
+        request = urllib.request.Request(
+            f"https://management-api.x.ai/v1/billing/teams/{team}/prepaid/balance",
+            headers={"Authorization": f"Bearer {mgmt}"},
+        )
+        data = json.loads(urllib.request.urlopen(request, timeout=8).read())
+        cents = abs(int((data.get("total") or {}).get("val") or 0))
+        return f"${cents / 100:.2f}"
+    except (urllib.error.URLError, OSError, ValueError, KeyError):
+        return None
+
+
 def reply_is_error(text: str) -> bool:
     """A provider or limiter failure string, not an answer worth speaking."""
     return (text or "").lstrip().startswith(_ERROR_REPLY_PREFIXES)
@@ -91,6 +127,7 @@ class OpenAIAnalyzer:
                 self.client = openai.OpenAI(
                     api_key=openai_config.lmstudio_api_key or "lm-studio",
                     base_url=LMSTUDIO_BASE_URL,
+                    timeout=180.0,
                 )
                 self._lmstudio_loaded_id = self._query_lmstudio_model()
             elif provider == "xai":
@@ -99,11 +136,12 @@ class OpenAIAnalyzer:
                 self.client = openai.OpenAI(
                     api_key=openai_config.xai_api_key,
                     base_url=XAI_BASE_URL,
+                    timeout=90.0,
                 )
             else:
                 if not openai_config.is_configured():
                     return False
-                self.client = openai.OpenAI(api_key=openai_config.api_key)
+                self.client = openai.OpenAI(api_key=openai_config.api_key, timeout=90.0)
         except Exception as exc:
             print(f"Failed to initialize {provider} client: {exc}")
             self.client = None
@@ -120,7 +158,7 @@ class OpenAIAnalyzer:
         if not openai_config.is_configured():
             return None
         if self._speech_client is None:
-            self._speech_client = openai.OpenAI(api_key=openai_config.api_key)
+            self._speech_client = openai.OpenAI(api_key=openai_config.api_key, timeout=60.0)
         return self._speech_client
 
     def _query_lmstudio_model(self) -> Optional[str]:

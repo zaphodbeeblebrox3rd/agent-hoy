@@ -26,7 +26,6 @@ _GROK_MODELS: List[Tuple[str, str]] = [
     ("Grok 4.7", "grok-4.7"),
 ]
 _OPENAI_MODELS: List[Tuple[str, str]] = [
-    ("GPT-4o Mini", "gpt-4o-mini"),
     ("GPT-4o", "gpt-4o"),
     ("GPT-4.1 Mini", "gpt-4.1-mini"),
     ("GPT-4.1", "gpt-4.1"),
@@ -185,7 +184,7 @@ def resolve_startup_model() -> str:
         return env_model
 
     persisted = load_persisted_model()
-    if persisted:
+    if persisted and persisted in LABEL_BY_MODEL_ID:
         return persisted
 
     return DEFAULT_MODEL
@@ -217,6 +216,10 @@ class OpenAIConfig:
         self.api_key = self._provider_key("openai", "OPENAI_API_KEY", "openai_key.txt")
         self.xai_api_key = self._provider_key("grok", "XAI_API_KEY", "xai_key.txt")
         self.lmstudio_api_key = self._provider_key("lmstudio", "LMSTUDIO_API_KEY", "lmstudio_key.txt")
+        # Optional xAI management key (different from the API key) for balance reads.
+        self.xai_management_key = self._provider_key(
+            "xai_management", "XAI_MANAGEMENT_KEY", "xai_management_key.txt"
+        )
 
         self.model = resolve_startup_model()
         self.max_tokens = int(os.getenv("OPENAI_MAX_TOKENS", "1000"))

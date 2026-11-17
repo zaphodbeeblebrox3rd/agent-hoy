@@ -5,12 +5,15 @@
 # False. The Control browser checkbox disappears and actions are not run.
 
 import base64
+import contextlib
 import hashlib
 import json
 import os
+import re
 import socket
 import struct
 import sys
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -215,12 +218,29 @@ def run_actions(websocket_url: str, actions: list[tuple[str, str]]) -> str:
     if not BROWSER_CONTROL_ENABLED or not actions or not websocket_url:
         return ""
     notes = []
-    with CdpSession(websocket_url) as session:
-        for verb, argument in actions:
-            try:
-                notes.append(_run_one(session, verb, argument))
-            except (CdpError, OSError, TimeoutError, ValueError) as exc:
-                notes.append(f"{verb} failed: {exc}")
+    entered = False
+    skip_entries = False
+    entry_verbs = ("choose", "type", "match", "move")
+    failures = ("not found", "refused", "choose is off", "not placed")
+    for verb, argument in actions:
+        if skip_entries and verb in entry_verbs:
+            continue
+        try:
+            session = _pooled_session(websocket_url)
+            note = _run_one(session, verb, argument)
+        except (CdpError, OSError, TimeoutError, ValueError) as exc:
+            _drop_session(websocket_url)
+            note = f"{verb} failed: {exc}"
+        notes.append(note)
+        if verb in entry_verbs:
+            if note.casefold() in failures and not entered:
+                # Nothing was entered - refuse to run a submit on a blank answer.
+                notes.append("skipped remaining selections after a failed one")
+                skip_entries = True
+            elif note.casefold() not in failures and not note.startswith(
+                f"{verb} failed"
+            ):
+                entered = True
     return "; ".join(note for note in notes if note)
 
 
@@ -236,6 +256,34 @@ def browser_kind(exe: str, title: str) -> str | None:
     if "google chrome" in folded:
         return "chrome"
     return None
+
+
+def debuggable_browser_window_ids() -> list[int]:
+    """Visible Edge/Chrome windows on a machine where that browser is debuggable."""
+    if sys.platform != "win32":
+        return []
+    import ctypes
+    from ctypes import wintypes
+
+    ports = {kind: find_debugging_port(kind) for kind in ("edge", "chrome")}
+    if not any(ports.values()):
+        return []
+    user32 = ctypes.windll.user32
+    found: list[int] = []
+    enum_proc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _collect(hwnd, _lparam):
+        try:
+            if user32.IsWindowVisible(hwnd) and not user32.IsIconic(hwnd):
+                kind = browser_kind(_windows_exe(hwnd), _windows_title(hwnd))
+                if kind and ports.get(kind):
+                    found.append(int(hwnd))
+        except Exception:
+            pass
+        return True
+
+    user32.EnumWindows(enum_proc(_collect), 0)
+    return found
 
 
 def find_debugging_port(kind: str) -> int | None:
@@ -322,17 +370,45 @@ def read_page(
         "   const tx = (el.innerText || el.getAttribute('aria-label') || '').trim();"
         "   if (tx) parts.push(mark + tx);"
         " });"
+        " const countOf = (sel) => [...document.querySelectorAll(sel)].filter(vis).length;"
+        " const cb = countOf('input[type=\"checkbox\"]') + countOf('[role=\"checkbox\"]');"
+        " const rb = countOf('input[type=\"radio\"]') + countOf('[role=\"radio\"]');"
+        " const sl = countOf('select');"
+        " const fi = countOf('input.fitb-input, textarea.fitb-input');"
+        " const ord = countOf('.choice-item[draggable=\"true\"], [data-drop-target-for-element]');"
+        " const mrow = countOf('.match-row');"
+        " const mtile = countOf('[draggable=\"true\"]');"
+        " const kinds = [];"
+        " if (mrow && mtile) kinds.push('matching - drag ' + mtile + ' items onto ' + mrow + ' labeled targets, use match: <item> -> <target> per pair');"
+        " if (cb > 1) kinds.push('multiple select - ' + cb + ' checkbox options, choose ALL correct');"
+        " if (rb > 1) kinds.push('single choice - ' + rb + ' radio options, choose exactly ONE');"
+        " if (fi) kinds.push('fill in the blank - ' + fi + ' text field' + (fi > 1 ? 's' : ''));"
+        " if (sl) kinds.push('dropdown - ' + sl + ' select' + (sl > 1 ? 's' : ''));"
+        " if (ord && !mrow) kinds.push('ordering - arrange ' + ord + ' items top to bottom, use move: <item> -> <item at its slot> per step');"
+        " const qtype = kinds.length ? 'Question type: ' + kinds.join('; ') + '.\\n\\n' : '';"
         f" const limit = {PAGE_TEXT_CHARS};"
         " const main = text.slice(0, limit);"
         " const controls = parts.join('\\n').slice(0, 4000);"
-        " return {text: main + (controls ? '\\n\\nForm controls:\\n' + controls : ''), url: location.href};"
+        " return {text: qtype + main + (controls ? '\\n\\nForm controls:\\n' + controls : ''), url: location.href};"
         "})()"
     )
-    with CdpSession(websocket_url) as session:
-        evaluated = session.call(
-            "Runtime.evaluate",
-            {"expression": expression, "returnByValue": True},
-        )
+    session = None
+    for attempt in range(2):
+        try:
+            session = _pooled_session(websocket_url)
+            evaluated = session.call(
+                "Runtime.evaluate",
+                {"expression": expression, "returnByValue": True},
+            )
+            break
+        except (OSError, CdpError):
+            _drop_session(websocket_url)
+            session = None
+            if attempt:
+                raise
+    if session is None:
+        raise CdpError("Debugging socket unavailable")
+    with contextlib.suppress(OSError):
         value = (evaluated.get("result") or {}).get("value") or {}
         if not isinstance(value, dict):
             value = {}
@@ -519,6 +595,24 @@ class CdpSession:
                 continue
 
 
+_CDP_POOL: dict[str, "CdpSession"] = {}
+
+
+def _pooled_session(websocket_url: str) -> "CdpSession":
+    """Reuse one debugging socket per page. Fresh sockets per call exhaust them."""
+    session = _CDP_POOL.get(websocket_url)
+    if session is None:
+        session = CdpSession(websocket_url)
+        _CDP_POOL[websocket_url] = session
+    return session
+
+
+def _drop_session(websocket_url: str) -> None:
+    session = _CDP_POOL.pop(websocket_url, None)
+    if session is not None:
+        session.close()
+
+
 def encode_client_frame(text: str, opcode: int = 0x1) -> bytes:
     """Masked client frame. Servers send unmasked frames back."""
     payload = text.encode("utf-8")
@@ -661,7 +755,127 @@ def _json_get(url: str, timeout: float):
         return json.loads(response.read().decode("utf-8"))
 
 
-def _choose_expression(anchor: str, answer: str) -> str:
+def _trusted_click(session: "CdpSession", x: float, y: float) -> None:
+    """A real mouse click. Synthetic el.click() is ignored by many frameworks."""
+    session.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+    session.call(
+        "Input.dispatchMouseEvent",
+        {"type": "mousePressed", "x": x, "y": y, "button": "left", "clickCount": 1},
+    )
+    session.call(
+        "Input.dispatchMouseEvent",
+        {"type": "mouseReleased", "x": x, "y": y, "button": "left", "clickCount": 1},
+    )
+    time.sleep(0.15)
+
+
+def _trusted_drag(session: "CdpSession", x: float, y: float, x2: float, y2: float) -> None:
+    """A real mouse drag. HTML5 drag-and-drop needs moved steps between press and release."""
+    session.call("Input.dispatchMouseEvent", {"type": "mouseMoved", "x": x, "y": y})
+    time.sleep(0.1)
+    session.call(
+        "Input.dispatchMouseEvent",
+        {"type": "mousePressed", "x": x, "y": y, "button": "left", "buttons": 1, "clickCount": 1},
+    )
+    time.sleep(0.15)
+    steps = 12
+    for i in range(1, steps + 1):
+        mx = x + (x2 - x) * i / steps
+        my = y + (y2 - y) * i / steps
+        session.call(
+            "Input.dispatchMouseEvent",
+            {"type": "mouseMoved", "x": mx, "y": my, "button": "left", "buttons": 1},
+        )
+        time.sleep(0.05)
+    session.call(
+        "Input.dispatchMouseEvent",
+        {"type": "mouseMoved", "x": x2, "y": y2, "button": "left", "buttons": 1},
+    )
+    time.sleep(0.3)
+    session.call(
+        "Input.dispatchMouseEvent",
+        {"type": "mouseReleased", "x": x2, "y": y2, "button": "left", "buttons": 1, "clickCount": 1},
+    )
+    time.sleep(0.2)
+
+
+def _run_plan(session: "CdpSession", raw: str) -> tuple[str, bool] | None:
+    """Execute a JSON click/type plan the page script returned. None if not a plan."""
+    try:
+        data = json.loads(raw)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or not isinstance(data.get("plan"), list):
+        return None
+    for step in data["plan"]:
+        if not isinstance(step, dict):
+            continue
+        x, y = step.get("x"), step.get("y")
+        if x is None or y is None:
+            continue
+        act = step.get("act")
+        if act == "click":
+            _trusted_click(session, x, y)
+        elif act == "drag":
+            x2, y2 = step.get("x2"), step.get("y2")
+            if x2 is not None and y2 is not None:
+                _trusted_drag(session, x, y, x2, y2)
+        elif act == "type":
+            _trusted_click(session, x, y)
+            session.call("Input.insertText", {"text": str(step.get("text") or "")})
+            time.sleep(0.15)
+    return str(data.get("result") or "done"), bool(data.get("repick"))
+
+
+_KEY_EVENTS = {
+    "enter": ("Enter", "Enter", 13),
+    "return": ("Enter", "Enter", 13),
+    "tab": ("Tab", "Tab", 9),
+    "escape": ("Escape", "Escape", 27),
+    "esc": ("Escape", "Escape", 27),
+    "space": (" ", "Space", 32),
+    "backspace": ("Backspace", "Backspace", 8),
+    "delete": ("Delete", "Delete", 46),
+    "arrowup": ("ArrowUp", "ArrowUp", 38),
+    "up": ("ArrowUp", "ArrowUp", 38),
+    "arrowdown": ("ArrowDown", "ArrowDown", 40),
+    "down": ("ArrowDown", "ArrowDown", 40),
+    "arrowleft": ("ArrowLeft", "ArrowLeft", 37),
+    "left": ("ArrowLeft", "ArrowLeft", 37),
+    "arrowright": ("ArrowRight", "ArrowRight", 39),
+    "right": ("ArrowRight", "ArrowRight", 39),
+    "home": ("Home", "Home", 36),
+    "end": ("End", "End", 35),
+    "pageup": ("PageUp", "PageUp", 33),
+    "pagedown": ("PageDown", "PageDown", 34),
+}
+
+
+def _key_event_params(key: str) -> dict:
+    k = (key or "enter").strip()
+    entry = _KEY_EVENTS.get(k.casefold())
+    if entry:
+        name, code, vk = entry
+        return {
+            "key": name,
+            "code": code,
+            "windowsVirtualKeyCode": vk,
+            "nativeVirtualKeyCode": vk,
+        }
+    if len(k) == 1:
+        upper = k.upper()
+        code = "Key" + upper if upper.isalpha() else ("Digit" + upper if upper.isdigit() else k)
+        return {
+            "key": k,
+            "code": code,
+            "windowsVirtualKeyCode": ord(upper),
+            "nativeVirtualKeyCode": ord(upper),
+            "text": k,
+        }
+    return {"key": k, "code": k, "windowsVirtualKeyCode": 0, "nativeVirtualKeyCode": 0}
+
+
+def _choose_expression(anchor: str, answer: str, call_id: str = "") -> str:
     """Script that selects one answer on the page."""
     script = """
 (() => {
@@ -703,6 +917,23 @@ def _choose_expression(anchor: str, answer: str) -> str:
 
   const inScope = (el) => !anchor || scopeLength(el) < anchor.length + 500;
 
+  const planClick = (el) => {
+    el.scrollIntoView({block: 'center', inline: 'center'});
+    const r = el.getBoundingClientRect();
+    return {act: 'click', x: r.left + r.width / 2, y: r.top + r.height / 2};
+  };
+  const planType = (el, value) => {
+    el.scrollIntoView({block: 'center', inline: 'center'});
+    const r = el.getBoundingClientRect();
+    el.value = '';
+    return {act: 'type', x: r.left + r.width / 2, y: r.top + r.height / 2, text: value};
+  };
+  const pack = (plan, result, repick) => {
+    const data = {plan, result};
+    if (repick) data.repick = true;
+    return JSON.stringify(data);
+  };
+
   const pickSelect = (doc) => {
     const selects = nodes(doc, 'select').filter((select) =>
       [...select.options].some((option) => norm(option.text) === answer)
@@ -721,27 +952,21 @@ def _choose_expression(anchor: str, answer: str) -> str:
   };
 
   const pickRow = (doc) => {
-    const rows = nodes(doc, '.choice-row, [role="option"]');
-    const matches = rows.filter((el) => textOf(el) === answer && inScope(el));
+    const rows = nodes(doc, '.choice-row, .form-check, [role="option"], [role="radio"], [role="checkbox"]');
+    let matches = rows.filter((el) => textOf(el) === answer && inScope(el));
+    if (!matches.length) {
+      matches = rows.filter((el) => {
+        const t = textOf(el);
+        return t.length > answer.length && t.includes(answer) && inScope(el);
+      });
+      matches.sort((a, b) => textOf(a).length - textOf(b).length);
+    }
     if (!matches.length) return '';
     const row = matches[0];
     const input = row.querySelector('input[type="radio"], input[type="checkbox"]');
     if (input && input.checked) return 'chose ' + answer;
     const clickable = row.querySelector('._clickable, label') || input || row;
-    clickable.click();
-    if (input && !input.checked) {
-      input.checked = true;
-      input.dispatchEvent(new Event('input', {bubbles: true}));
-      input.dispatchEvent(new Event('change', {bubbles: true}));
-    }
-    return 'chose ' + answer;
-  };
-
-  const writeField = (field, value) => {
-    field.focus();
-    field.value = value;
-    field.dispatchEvent(new Event('input', {bubbles: true}));
-    field.dispatchEvent(new Event('change', {bubbles: true}));
+    return pack([planClick(clickable)], 'chose ' + answer);
   };
 
   const pickText = (doc) => {
@@ -760,12 +985,10 @@ def _choose_expression(anchor: str, answer: str) -> str:
     const words = answer.split(' ').filter(Boolean);
     if (fields.length === 1 || words.length === 1 && fields.length > 1 && fields.filter((el) => !norm(el.value)).length === 1) {
       const field = fields.length === 1 ? fields[0] : fields.filter((el) => !norm(el.value))[0];
-      writeField(field, answer);
-      return 'chose ' + answer;
+      return pack([planType(field, answer)], 'chose ' + answer);
     }
     if (words.length === fields.length) {
-      fields.forEach((field, index) => writeField(field, words[index]));
-      return 'chose ' + answer;
+      return pack(fields.map((field, index) => planType(field, words[index])), 'chose ' + answer);
     }
     return '';
   };
@@ -775,11 +998,14 @@ def _choose_expression(anchor: str, answer: str) -> str:
       const text = textOf(el);
       return (text === 'click to select' || text === '(click to select)') && inScope(el);
     });
-    if (!openers.length) return false;
-    if (!anchor && openers.length !== 1) return false;
+    if (!openers.length) return '';
+    if (!anchor && openers.length !== 1) return '';
     openers.sort((a, b) => scopeLength(a) - scopeLength(b));
-    openers[0].click();
-    return true;
+    const opener = openers[0];
+    if (opener.getAttribute('aria-expanded') === 'true') return '';
+    if (window.__agentHoyMenuOpened === __CALL__) return '';
+    window.__agentHoyMenuOpened = __CALL__;
+    return pack([planClick(opener)], 'menu open', true);
   };
 
   for (const doc of docs) {
@@ -790,17 +1016,9 @@ def _choose_expression(anchor: str, answer: str) -> str:
     const typed = pickText(doc);
     if (typed) return typed;
   }
-  let opened = false;
   for (const doc of docs) {
-    if (openMenu(doc)) opened = true;
-  }
-  if (opened) {
-    for (const doc of docs) {
-      const chosen = pickRow(doc);
-      if (chosen) return chosen;
-      const selected = pickSelect(doc);
-      if (selected) return selected;
-    }
+    const menuPlan = openMenu(doc);
+    if (menuPlan) return menuPlan;
   }
   return 'not found';
 })()
@@ -808,6 +1026,173 @@ def _choose_expression(anchor: str, answer: str) -> str:
     return (
         script.replace("__ANCHOR__", json.dumps(" ".join(anchor.casefold().split())))
         .replace("__ANSWER__", json.dumps(" ".join(answer.casefold().split())))
+        .replace("__CALL__", json.dumps(call_id))
+    )
+
+
+def _match_expression(source: str, target: str) -> str:
+    """Script that drags a tile onto the drop zone of a labeled match row."""
+    script = """
+(() => {
+  const src = __SRC__;
+  const dst = __DST__;
+  const norm = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  if (!src || !dst) return 'refused';
+
+  const docs = [];
+  const visit = (win) => {
+    try { docs.push(win.document); } catch (e) { return; }
+    for (let i = 0; i < win.frames.length; i++) {
+      try { visit(win.frames[i]); } catch (e) {}
+    }
+  };
+  visit(window);
+
+  const nodes = (root, selector) => {
+    const found = [...root.querySelectorAll(selector)];
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.shadowRoot) found.push(...nodes(el.shadowRoot, selector));
+    });
+    return found;
+  };
+
+  const textOf = (el) => norm(el.innerText || el.textContent || '');
+  const center = (el) => {
+    el.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    const r = el.getBoundingClientRect();
+    return {x: r.left + r.width / 2, y: r.top + r.height / 2};
+  };
+
+  for (const doc of docs) {
+    const allTiles = nodes(doc, '[draggable=true]');
+    const allRows = nodes(doc, '.match-row');
+    const pickTiles = (key) => allTiles.filter((el) => {
+      const t = textOf(el);
+      return t === key || t.includes(key) || (key.includes(t) && t.length > 2);
+    });
+    const pickRows = (key) => allRows.filter((el) => textOf(el).includes(key));
+    let tiles = pickTiles(src);
+    let rows = pickRows(dst);
+    if (!tiles.length || !rows.length) {
+      // The model may swap source and target; accept either direction.
+      const swappedTiles = pickTiles(dst);
+      const swappedRows = pickRows(src);
+      if (swappedTiles.length && swappedRows.length) {
+        tiles = swappedTiles;
+        rows = swappedRows;
+      }
+    }
+    if (!tiles.length || !rows.length) continue;
+    tiles.sort((a, b) => textOf(a).length - textOf(b).length);
+    rows.sort((a, b) => textOf(a).length - textOf(b).length);
+    const zone = rows[0].querySelector('.droppableContainer') || rows[0];
+    tiles[0].scrollIntoView({block: 'nearest', inline: 'nearest'});
+    zone.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    const s = center(tiles[0]);
+    const d = center(zone);
+    return JSON.stringify({
+      plan: [{act: 'drag', x: s.x, y: s.y, x2: d.x, y2: d.y}],
+      result: 'matched ' + src + ' -> ' + dst,
+    });
+  }
+  return 'not found';
+})()
+"""
+    return (
+        script.replace("__SRC__", json.dumps(" ".join(source.casefold().split())))
+        .replace("__DST__", json.dumps(" ".join(target.casefold().split())))
+    )
+
+
+def _move_expression(source: str, target: str) -> str:
+    """Script that drags an ordering-list item onto the item holding its slot."""
+    script = """
+(() => {
+  const src = __SRC__;
+  const dst = __DST__;
+  const norm = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  if (!src || !dst) return 'refused';
+
+  const docs = [];
+  const visit = (win) => {
+    try { docs.push(win.document); } catch (e) { return; }
+    for (let i = 0; i < win.frames.length; i++) {
+      try { visit(win.frames[i]); } catch (e) {}
+    }
+  };
+  visit(window);
+
+  const nodes = (root, selector) => {
+    const found = [...root.querySelectorAll(selector)];
+    root.querySelectorAll('*').forEach((el) => {
+      if (el.shadowRoot) found.push(...nodes(el.shadowRoot, selector));
+    });
+    return found;
+  };
+
+  const textOf = (el) => norm(el.innerText || el.textContent || '');
+  const pick = (items, key) => {
+    let m = items.filter((el) => textOf(el) === key);
+    if (!m.length) {
+      m = items.filter((el) => {
+        const t = textOf(el);
+        return t.includes(key) || (key.includes(t) && t.length > 2);
+      });
+      m.sort((a, b) => textOf(a).length - textOf(b).length);
+    }
+    return m[0] || null;
+  };
+
+  for (const doc of docs) {
+    const items = nodes(doc, '.choice-item[draggable=true], .choice-item').filter(
+      (el) => el.offsetParent !== null
+    );
+    if (items.length < 2) continue;
+    const tile = pick(items, src);
+    const slot = pick(items, dst);
+    if (!tile || !slot || tile === slot) continue;
+    tile.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    slot.scrollIntoView({block: 'nearest', inline: 'nearest'});
+    const a = tile.getBoundingClientRect();
+    const b = slot.getBoundingClientRect();
+    return JSON.stringify({
+      plan: [{
+        act: 'drag',
+        x: a.left + a.width / 2, y: a.top + a.height / 2,
+        x2: b.left + b.width / 2, y2: b.top + b.height / 2,
+      }],
+      result: 'moved ' + src + ' -> ' + dst,
+    });
+  }
+  return 'not found';
+})()
+"""
+    return (
+        script.replace("__SRC__", json.dumps(" ".join(source.casefold().split())))
+        .replace("__DST__", json.dumps(" ".join(target.casefold().split())))
+    )
+
+
+def _match_verify_expression(source: str, target: str) -> str:
+    """True when the labeled match row's drop zone holds the dragged item."""
+    script = """
+(() => {
+  const src = __SRC__;
+  const dst = __DST__;
+  const norm = (value) => (value || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+  const rows = [...document.querySelectorAll('.match-row')];
+  const placed = (rowKey, tileKey) => rows.some((row) => {
+    const text = norm(row.innerText || '');
+    if (!text.includes(rowKey)) return false;
+    const zone = row.querySelector('.droppableContainer');
+    return zone && norm(zone.innerText || '').includes(tileKey);
+  });
+  return placed(dst, src) || placed(src, dst);
+})()
+"""
+    return (
+        script.replace("__SRC__", json.dumps(" ".join(source.casefold().split())))
+        .replace("__DST__", json.dumps(" ".join(target.casefold().split())))
     )
 
 
@@ -832,17 +1217,17 @@ def _run_one(session: CdpSession, verb: str, argument: str) -> str:
         )
         return f"scrolled {direction}"
     if verb == "press":
-        key = argument[:40]
-        expression = (
-            "(() => {"
-            " const el = window.__agentHoyField || document.activeElement || document.body;"
-            f" const key = {json.dumps(key)};"
-            " el.dispatchEvent(new KeyboardEvent('keydown', {key: key, bubbles: true}));"
-            " el.dispatchEvent(new KeyboardEvent('keyup', {key: key, bubbles: true}));"
-            " return 'pressed';"
-            "})()"
+        key = (argument or "enter").strip()[:40] or "enter"
+        session.call(
+            "Runtime.evaluate",
+            {
+                "expression": "(() => { const el = window.__agentHoyField; if (el && el.focus) el.focus(); })()",
+                "returnByValue": True,
+            },
         )
-        session.call("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+        params = _key_event_params(key)
+        session.call("Input.dispatchKeyEvent", {"type": "keyDown", **params})
+        session.call("Input.dispatchKeyEvent", {"type": "keyUp", **params})
         return f"pressed {key}"
     if verb == "type":
         text = argument[:500]
@@ -852,15 +1237,57 @@ def _run_one(session: CdpSession, verb: str, argument: str) -> str:
             "   || window.__agentHoyField;"
             f" const text = {json.dumps(text)};"
             " if (!el || !('value' in el)) return 'no field';"
-            " el.focus();"
-            " el.value = text;"
-            " el.dispatchEvent(new Event('input', {bubbles: true}));"
-            " el.dispatchEvent(new Event('change', {bubbles: true}));"
-            " return 'typed';"
+            " el.value = '';"
+            " el.scrollIntoView({block: 'center', inline: 'center'});"
+            " const r = el.getBoundingClientRect();"
+            " return JSON.stringify({plan: [{act: 'type', x: r.left + r.width / 2, y: r.top + r.height / 2, text: text}], result: 'typed'});"
             "})()"
         )
         result = session.call("Runtime.evaluate", {"expression": expression, "returnByValue": True})
-        return str((result.get("result") or {}).get("value") or "typed")
+        raw = str((result.get("result") or {}).get("value") or "typed")
+        planned = _run_plan(session, raw)
+        return planned[0] if planned else raw
+    if verb == "move":
+        parts = re.split(r"\s*(?:->|=>|\|)\s*", argument, maxsplit=1)
+        if len(parts) != 2 or not all(part.strip() for part in parts):
+            return "refused"
+        result = session.call(
+            "Runtime.evaluate",
+            {
+                "expression": _move_expression(parts[0].strip(), parts[1].strip()),
+                "returnByValue": True,
+            },
+        )
+        raw = str((result.get("result") or {}).get("value") or "not found")
+        planned = _run_plan(session, raw)
+        return planned[0] if planned else raw
+    if verb == "match":
+        parts = re.split(r"\s*(?:->|=>|\|)\s*", argument, maxsplit=1)
+        if len(parts) != 2 or not all(part.strip() for part in parts):
+            return "refused"
+        source, target = parts[0].strip(), parts[1].strip()
+        for _ in range(3):
+            result = session.call(
+                "Runtime.evaluate",
+                {
+                    "expression": _match_expression(source, target),
+                    "returnByValue": True,
+                },
+            )
+            raw = str((result.get("result") or {}).get("value") or "not found")
+            planned = _run_plan(session, raw)
+            note = planned[0] if planned else raw
+            if not note.startswith("matched"):
+                return note
+            time.sleep(0.4)
+            check = session.call(
+                "Runtime.evaluate",
+                {"expression": _match_verify_expression(source, target), "returnByValue": True},
+            )
+            if (check.get("result") or {}).get("value"):
+                return note
+            note = "not placed"
+        return note
     if verb == "choose":
         if not CHOOSE_ENABLED:
             return "choose is off"
@@ -868,14 +1295,51 @@ def _run_one(session: CdpSession, verb: str, argument: str) -> str:
         if parsed is None:
             return "refused"
         anchor, answer = parsed
-        result = session.call(
-            "Runtime.evaluate",
-            {"expression": _choose_expression(anchor, answer), "returnByValue": True},
+        call_id = str(int(time.time() * 1000))
+        text_result = "not found"
+        for _ in range(2):
+            result = session.call(
+                "Runtime.evaluate",
+                {
+                    "expression": _choose_expression(anchor, answer, call_id),
+                    "returnByValue": True,
+                },
+            )
+            if result.get("exceptionDetails"):
+                detail = result.get("exceptionDetails") or {}
+                return str(detail.get("text") or "choose failed")[:160]
+            raw = str((result.get("result") or {}).get("value") or "not found")
+            planned = _run_plan(session, raw)
+            if planned is None:
+                return raw
+            text_result, repick = planned
+            if not repick:
+                return text_result
+            time.sleep(0.6)
+        return text_result
+    if verb == "advance":
+        time.sleep(0.8)
+        expression = (
+            "(() => {"
+            " const cands = [...document.querySelectorAll('button, [role=\"button\"], input[type=\"submit\"]')]"
+            "   .filter(b => !b.disabled && b.offsetParent !== null);"
+            " const name = (b) => (b.innerText || b.value || b.getAttribute('aria-label') || '').trim();"
+            " const pats = [/submit/i, /check answer|verify/i, /^high$/i, /^medium$/i, /^low$/i, /confidence/i, /next/i, /continue|proceed|complete|finish/i];"
+            " for (const p of pats) {"
+            "   const b = cands.find(el => p.test(name(el)));"
+            "   if (b) {"
+            "     b.scrollIntoView({block: 'center', inline: 'center'});"
+            "     const r = b.getBoundingClientRect();"
+            "     return JSON.stringify({plan: [{act: 'click', x: r.left + r.width / 2, y: r.top + r.height / 2}], result: 'advanced: ' + name(b)});"
+            "   }"
+            " }"
+            " return 'nothing to advance';"
+            "})()"
         )
-        if result.get("exceptionDetails"):
-            detail = result.get("exceptionDetails") or {}
-            return str(detail.get("text") or "choose failed")[:160]
-        return str((result.get("result") or {}).get("value") or "not found")
+        result = session.call("Runtime.evaluate", {"expression": expression, "returnByValue": True})
+        raw = str((result.get("result") or {}).get("value") or "nothing to advance")
+        planned = _run_plan(session, raw)
+        return planned[0] if planned else raw
     if verb == "click":
         label = argument[:200]
         expression = (
@@ -886,15 +1350,17 @@ def _run_one(session: CdpSession, verb: str, argument: str) -> str:
             " for (const node of nodes) {"
             "   const name = (node.innerText || node.value || node.getAttribute('aria-label') || node.getAttribute('placeholder') || '').trim().toLowerCase();"
             "   if (name.includes(needle)) {"
-            "     node.click();"
-            "     if (node.focus) node.focus();"
             "     window.__agentHoyField = node;"
-            "     return 'clicked';"
+            "     node.scrollIntoView({block: 'center', inline: 'center'});"
+            "     const r = node.getBoundingClientRect();"
+            "     return JSON.stringify({plan: [{act: 'click', x: r.left + r.width / 2, y: r.top + r.height / 2}], result: 'clicked'});"
             "   }"
             " }"
             " return 'not found';"
             "})()"
         )
         result = session.call("Runtime.evaluate", {"expression": expression, "returnByValue": True})
-        return str((result.get("result") or {}).get("value") or "clicked")
+        raw = str((result.get("result") or {}).get("value") or "clicked")
+        planned = _run_plan(session, raw)
+        return planned[0] if planned else raw
     return ""

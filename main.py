@@ -49,6 +49,7 @@ from assist_mode import (
     skips_topic_path,
     guide_instructions,
     guide_send_plan,
+    page_key,
     load_assist_settings,
     save_assist_settings,
     speaks,
@@ -56,6 +57,7 @@ from assist_mode import (
 from browser_bridge import (
     BROWSER_CONTROL_ENABLED,
     browser_actions_allowed,
+    debuggable_browser_window_ids,
     look_at_browser,
     run_actions,
 )
@@ -106,6 +108,23 @@ USER_ENTRY_ENABLED = True
 # Rollback: set False to stop writing transcripts/YYYY-MM-DD.log.
 SESSION_LOG_ENABLED = True
 SESSION_LOG_DIR = "transcripts"
+
+# Auto-advance: hands-free turns while the attached tab keeps taking actions.
+AUTO_ADVANCE_MS = 2500
+AUTO_ADVANCE_MAX = 40
+# Consecutive auto turns on an unchanged page before the loop stops itself.
+AUTO_STALL_MAX = 3
+CREDITS_POLL_MS = 120_000
+AUTO_ADVANCE_UTTERANCE = (
+    "Continue on the page. When a question is shown, answer it and submit it. "
+    "When answer feedback is shown, click Next Question. "
+    "When the last answer was marked incorrect, say so and do not click Next Question."
+)
+
+# Rollback: set False to ignore the external trigger file.
+EXTERNAL_TRIGGER_ENABLED = True
+# Drop an utterance into this file (repo dir) to fire a guide turn hands-free.
+TRIGGER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "guide_trigger.txt")
 
 
 def log_session_line(role: str, text: str) -> None:
@@ -224,7 +243,7 @@ from voice_output import (
     wait_between_parts,
 )
 try:
-    from openai_integration import openai_analyzer, reply_is_error
+    from openai_integration import fetch_credit_balance, openai_analyzer, reply_is_error
     OPENAI_AVAILABLE = True
 except ImportError:
     print("OpenAI integration not available - using template fallback")
@@ -316,6 +335,10 @@ class SpeechTranscriptionApp:
         self._guide_page_key = ""
         self._guide_utterance = ""
         self._last_guide_spoken = ""
+        self._auto_count = 0
+        self._auto_stall = 0
+        self._auto_stall_key = ""
+        self._auto_advance_on = False
         self._dialogue = []
         self._dialogue_lock = threading.Lock()
         self._attached_blocks = []
@@ -484,6 +507,14 @@ class SpeechTranscriptionApp:
                     variable=self.rapid_fire_mode,
                     command=self.on_assist_changed,
                 ).pack(side=tk.LEFT, padx=(12, 0))
+            if BROWSER_CONTROL_ENABLED:
+                self.auto_advance = tk.BooleanVar(value=settings.auto_advance)
+                ttk.Checkbutton(
+                    mode_row,
+                    text="Auto-advance",
+                    variable=self.auto_advance,
+                    command=self.on_assist_changed,
+                ).pack(side=tk.LEFT, padx=(12, 0))
 
         # Second row - Status labels and settings
         bottom_row = ttk.Frame(control_frame)
@@ -546,6 +577,9 @@ class SpeechTranscriptionApp:
         self.session_cost = 0.0
         self.cost_label = ttk.Label(bottom_row, text="Session Cost: $0.00")
         self.cost_label.pack(side=tk.LEFT, padx=(0, 20))
+
+        self.credits_label = ttk.Label(bottom_row, text="Credits: …")
+        self.credits_label.pack(side=tk.LEFT, padx=(0, 20))
         
         # API call tracking
         self.api_call_count = 0
@@ -640,7 +674,31 @@ class SpeechTranscriptionApp:
         
         # Restore saved pane positions after a short delay
         self.root.after(100, self.restore_pane_positions)
-        
+
+        # Poll for an externally dropped trigger file (used by Devin/automation
+        # to inject an utterance like "proceed" without speech or clicking).
+        if EXTERNAL_TRIGGER_ENABLED:
+            self.root.after(1000, self._poll_external_trigger)
+        self.root.after(2000, self._poll_credits)
+
+    def _poll_external_trigger(self):
+        """Consume TRIGGER_FILE as an injected user utterance, then reschedule."""
+        try:
+            if os.path.exists(TRIGGER_FILE):
+                try:
+                    with open(TRIGGER_FILE, "r", encoding="utf-8") as handle:
+                        text = handle.read().strip()
+                    os.remove(TRIGGER_FILE)
+                except OSError:
+                    text = ""
+                if text:
+                    self.current_transcription += " " + text + " "
+                    log_session_line("User", text)
+                    self.last_speech_time = 0
+                    self.schedule_delayed_analysis()
+        finally:
+            self.root.after(1000, self._poll_external_trigger)
+
     def setup_caching(self):
         """Initialize caching system"""
         try:
@@ -1546,6 +1604,7 @@ class SpeechTranscriptionApp:
                 openai_analyzer._ensure_client()
             self.openai_status_label.config(text=self._openai_status_text())
             self.update_ai_status(f"Model changed to {model_id}")
+            self._refresh_credits()
             print(f"OpenAI model set to {model_id}")
         except Exception as e:
             print(f"Error changing OpenAI model: {e}")
@@ -1599,6 +1658,10 @@ class SpeechTranscriptionApp:
         rapid_fire = False
         if RAPID_FIRE_ENABLED and hasattr(self, "rapid_fire_mode"):
             rapid_fire = bool(self.rapid_fire_mode.get())
+        auto_advance = False
+        if BROWSER_CONTROL_ENABLED and hasattr(self, "auto_advance"):
+            auto_advance = bool(self.auto_advance.get())
+        self._auto_advance_on = auto_advance
         return AssistSettings(
             bool(self.transcription_assist.get()),
             bool(self.voice_assist.get()),
@@ -1606,6 +1669,7 @@ class SpeechTranscriptionApp:
             browser_control,
             non_it,
             rapid_fire,
+            auto_advance,
         )
 
     def _on_app_focus_out(self, event):
@@ -1621,7 +1685,7 @@ class SpeechTranscriptionApp:
         if foreign:
             self._shared_window_id = foreign
 
-    def _run_guide_turn(self, snapshot: str):
+    def _run_guide_turn(self, snapshot: str, auto: bool = False):
         """Talk with the user, using memory, recent turns, and the shared page."""
         acquired = False
         timer = None
@@ -1638,20 +1702,31 @@ class SpeechTranscriptionApp:
                 )
                 return
 
-            new_text = snapshot[self._guide_cursor :].strip()
-            if not new_text:
-                return
-            if " ".join(new_text.casefold().split()) == " ".join(
-                (self._guide_utterance or "").casefold().split()
-            ):
-                self._guide_cursor = len(snapshot)
-                return
-            if _utterance_is_repetition(new_text):
-                self._guide_cursor = len(snapshot)
-                return
+            if auto:
+                if not self._auto_advance_on:
+                    return
+                new_text = AUTO_ADVANCE_UTTERANCE
+            else:
+                self._auto_count = 0
+                self._auto_stall = 0
+                self._auto_stall_key = ""
+                new_text = snapshot[self._guide_cursor :].strip()
+                if not new_text:
+                    return
+                if " ".join(new_text.casefold().split()) == " ".join(
+                    (self._guide_utterance or "").casefold().split()
+                ):
+                    self._guide_cursor = len(snapshot)
+                    return
+                if _utterance_is_repetition(new_text):
+                    self._guide_cursor = len(snapshot)
+                    return
 
             current_time = time.time()
-            if current_time - self.last_guide_time < self.ai_analysis_throttle_seconds:
+            if (
+                not auto
+                and current_time - self.last_guide_time < self.ai_analysis_throttle_seconds
+            ):
                 return
 
             with self.guide_lock:
@@ -1709,6 +1784,7 @@ class SpeechTranscriptionApp:
                         print(capture_note)
                     if page and page.attached:
                         page_text = page.text
+                        capture_metric = f"{capture_metric}+page"
                         if image is not None:
                             capture_note = (
                                 f"{capture_note} Page text from the attached browser tab is included."
@@ -1792,6 +1868,17 @@ class SpeechTranscriptionApp:
                 screen=screen_direct and capture_metric.startswith("Screen"),
             )
             same_page = bool(self._guide_page_key) and self._guide_page_key == turn_key
+            if auto:
+                # Stall detection uses stable DOM text when attached; screenshot
+                # pixels always differ slightly so they can never detect a stall.
+                stall_key = (
+                    page_key(page_url, page_text, None)
+                    if page_text.strip()
+                    else turn_key
+                )
+                same_stall = bool(self._auto_stall_key) and self._auto_stall_key == stall_key
+                self._auto_stall = (self._auto_stall + 1) if same_stall else 0
+                self._auto_stall_key = stall_key
             plan = guide_send_plan(
                 self._guide_page_key,
                 self._guide_utterance,
@@ -1800,7 +1887,7 @@ class SpeechTranscriptionApp:
                 image is not None,
                 REUSE_UNCHANGED_PAGE,
             )
-            if plan == "skip":
+            if plan == "skip" and not auto:
                 timer.start("model")
                 timer.stop("skipped")
                 self._guide_cursor = len(snapshot)
@@ -1870,8 +1957,42 @@ class SpeechTranscriptionApp:
             if rapid:
                 spoken = rapid_reply(spoken)
                 memories = []
+                if allow_actions and page is not None and page.attached:
+                    if not actions and spoken and "not sure" not in spoken.casefold():
+                        actions = [
+                            ("choose", line.strip())
+                            for line in spoken.splitlines()
+                            if line.strip()
+                        ]
+            if (
+                (auto or rapid)
+                and allow_actions
+                and page is not None
+                and page.attached
+                and actions
+                and not any(verb == "advance" for verb, _ in actions)
+            ):
+                actions.append(("advance", ""))
+            if (auto or rapid) and allow_actions and page is not None and page.attached and not actions:
+                actions = [("advance", "")]
+            if (
+                allow_actions
+                and page is not None
+                and page.attached
+                and actions
+                and re.search(r"answer mode|your answer (correct|incorrect)", page_text[:800], re.I)
+            ):
+                # Feedback pages have nothing to select - drop entry verbs so a
+                # failed choose can't abort the Next Question advance.
+                actions = [
+                    (verb, arg)
+                    for verb, arg in actions
+                    if verb not in ("choose", "type", "match", "move")
+                ]
+                if not any(verb == "advance" for verb, _ in actions):
+                    actions.append(("advance", ""))
             normalized_spoken = " ".join(spoken.casefold().split())
-            if normalized_spoken and normalized_spoken == self._last_guide_spoken:
+            if not auto and normalized_spoken and normalized_spoken == self._last_guide_spoken:
                 self._guide_cursor = len(snapshot)
                 self.root.after(
                     0, lambda: self.update_ai_status("Same answer as the last turn. Suppressed.")
@@ -1906,13 +2027,32 @@ class SpeechTranscriptionApp:
                     action_note = "Browser actions were not run because no page is attached."
                     if page and page.status:
                         action_note = f"{action_note} {page.status}"
-                timer.stop(str(len(actions)))
+                verbs = "+".join(verb for verb, _ in actions)
+                timer.stop(f"{len(actions)} [{verbs}] {action_note[:100]}")
 
             with self._dialogue_lock:
                 self._dialogue.append((recent, spoken))
                 self._dialogue = self._dialogue[-DIALOGUE_TURNS:]
 
             self._guide_cursor = len(snapshot)
+            ran_actions = (
+                bool(actions)
+                and bool(action_note)
+                and "not run" not in action_note
+                and not action_note.startswith("Browser action failed")
+            )
+            if (
+                self._auto_advance_on
+                and allow_actions
+                and page is not None
+                and page.attached
+                and ran_actions
+                and "not sure" not in normalized_spoken
+                and self._auto_count < AUTO_ADVANCE_MAX
+                and self._auto_stall < AUTO_STALL_MAX
+            ):
+                self._auto_count += 1
+                self.root.after(AUTO_ADVANCE_MS, self._auto_continue)
             if cost > 0:
                 self.root.after(0, lambda amount=cost: self.add_to_session_cost(amount))
                 self.root.after(0, self.increment_api_counter)
@@ -1961,13 +2101,61 @@ class SpeechTranscriptionApp:
                     daemon=True,
                 ).start()
 
+    def _auto_continue(self):
+        """Fire the next hands-free turn while Auto-advance is still on."""
+        if not self._auto_advance_on:
+            return
+        settings = self._current_assist()
+        if not (
+            guide_active(settings)
+            and browser_actions_allowed(settings.browser_control)
+        ):
+            return
+        self._scheduled_settings = settings
+        self._scheduled_ai_enabled = bool(self.ai_enabled_var.get())
+        self._guide_exclude_id = None
+        self._guide_logical_screen = None
+        try:
+            self._guide_exclude_id = int(self.root.winfo_id())
+            self._guide_logical_screen = (
+                self.root.winfo_screenwidth(),
+                self.root.winfo_screenheight(),
+            )
+        except (tk.TclError, ValueError, TypeError):
+            pass
+        self.update_ai_status(f"Auto-advance turn {self._auto_count}/{AUTO_ADVANCE_MAX}")
+        threading.Thread(
+            target=self._run_guide_turn,
+            args=(self.current_transcription,),
+            kwargs={"auto": True},
+            daemon=True,
+        ).start()
+
     def _page_for_guide(self, model: str, *, include_image: bool = True):
-        """Attach when the shared window is Edge or Chrome. Other windows stay screenshots."""
+        """Attach to a debuggable browser window, preferring the shared/foreground one."""
         window_id = self._shared_window_id or foreign_window_id(self._guide_exclude_id)
-        if not window_id:
-            return None
-        self._shared_window_id = window_id
-        return look_at_browser(int(window_id), model, include_image=include_image)
+        candidates = []
+        if window_id:
+            candidates.append(int(window_id))
+        for hwnd in debuggable_browser_window_ids():
+            if hwnd not in candidates:
+                candidates.append(hwnd)
+        fallback = None
+        for candidate in candidates:
+            try:
+                page = look_at_browser(candidate, model, include_image=include_image)
+            except Exception:
+                page = None
+            if page is None:
+                continue
+            if page.attached:
+                self._shared_window_id = candidate
+                return page
+            if fallback is None:
+                fallback = page
+        if window_id:
+            self._shared_window_id = int(window_id)
+        return fallback
 
     def _capture_for_guide(self, vision: str):
         share_mode = "screen" if vision == VISION_SCREEN else "window"
@@ -2290,6 +2478,24 @@ class SpeechTranscriptionApp:
             self.cost_label.config(text=f"Session Cost: ${self.session_cost:.4f}")
         except Exception as e:
             print(f"Error updating cost display: {e}")
+
+    def _refresh_credits(self):
+        """Refresh the remaining-credits label off the UI thread."""
+        if not OPENAI_AVAILABLE or openai_analyzer is None:
+            return
+        model = openai_config.model
+
+        def _work():
+            text = fetch_credit_balance(model)
+            label = f"Credits: {text}" if text else "Credits: n/a"
+            self.root.after(0, lambda: self.credits_label.config(text=label))
+
+        threading.Thread(target=_work, daemon=True).start()
+
+    def _poll_credits(self):
+        """Periodic credit refresh; reschedules itself."""
+        self._refresh_credits()
+        self.root.after(CREDITS_POLL_MS, self._poll_credits)
     
     def update_api_counter_display(self):
         """Update the API counter display in the UI"""
@@ -3239,6 +3445,9 @@ class SpeechTranscriptionApp:
         self.current_transcription = ""
         self._guide_cursor = 0
         self._guide_page_key = ""
+        self._auto_count = 0
+        self._auto_stall = 0
+        self._auto_stall_key = ""
         self._guide_utterance = ""
         self._last_guide_spoken = ""
         with self._dialogue_lock:
