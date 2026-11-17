@@ -218,7 +218,7 @@ from voice_output import (
     wait_between_parts,
 )
 try:
-    from openai_integration import openai_analyzer
+    from openai_integration import openai_analyzer, reply_is_error
     OPENAI_AVAILABLE = True
 except ImportError:
     print("OpenAI integration not available - using template fallback")
@@ -1849,6 +1849,11 @@ class SpeechTranscriptionApp:
             )
             image_note = "image" if image else "text"
             timer.stop(f"{provider_label(openai_config.model)} {image_note} chars={len(ai_content or '')}")
+            if reply_is_error(ai_content):
+                self._guide_cursor = len(snapshot)
+                message = " ".join((ai_content or "").split())
+                self.root.after(0, lambda m=message: self.update_ai_status(m))
+                return
             self._guide_page_key = turn_key
             self._guide_utterance = recent
             spoken, memories, actions, output_files = split_guide_reply(ai_content)

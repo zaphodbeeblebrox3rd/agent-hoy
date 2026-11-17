@@ -26,6 +26,23 @@ from openai_config import (
     uses_chat_completions,
 )
 
+_ERROR_REPLY_PREFIXES = (
+    "OpenAI API error:",
+    "Grok API error:",
+    "LM Studio API error:",
+    "Rate limit exceeded",
+    "OpenAI is not configured",
+    "Grok needs",
+    "LM Studio is not answering",
+    "LM Studio client was not created",
+    "AI Analysis temporarily unavailable",
+)
+
+
+def reply_is_error(text: str) -> bool:
+    """A provider or limiter failure string, not an answer worth speaking."""
+    return (text or "").lstrip().startswith(_ERROR_REPLY_PREFIXES)
+
 
 class OpenAIAnalyzer:
     """OpenAI API integration for generating AI analysis."""

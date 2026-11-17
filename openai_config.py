@@ -227,8 +227,8 @@ class OpenAIConfig:
         self.use_responses_api = _env_bool("USE_RESPONSES_API", True)
         self.stream_responses = _env_bool("OPENAI_STREAM", True)
 
-        self.max_requests_per_minute = int(os.getenv("OPENAI_MAX_REQUESTS_PER_MINUTE", "20"))
-        self.max_tokens_per_minute = int(os.getenv("OPENAI_MAX_TOKENS_PER_MINUTE", "40000"))
+        self.max_requests_per_minute = int(os.getenv("OPENAI_MAX_REQUESTS_PER_MINUTE", "60"))
+        self.max_tokens_per_minute = int(os.getenv("OPENAI_MAX_TOKENS_PER_MINUTE", "120000"))
 
         self.cache_responses = _env_bool("OPENAI_CACHE_RESPONSES", True)
         self.cache_expiration_hours = int(os.getenv("OPENAI_CACHE_HOURS", "24"))

@@ -234,6 +234,8 @@ Assist choices are stored in `conf/assist_mode.conf`.
 | `VERBOSE` | `false` | Debug logging |
 | `RECOGNITION_MAX_WORKERS` | `2` | Parallel speech-to-text workers |
 | `NETWORK_CHECK_TTL_SECONDS` | `30` | How long a network check is cached |
+| `OPENAI_MAX_REQUESTS_PER_MINUTE` | `60` | Client-side request cap; beyond it the turn is skipped with a status note |
+| `OPENAI_MAX_TOKENS_PER_MINUTE` | `120000` | Client-side token cap for the same guard |
 
 More detail: [OPENAI_SETUP.md](OPENAI_SETUP.md), [OFFLINE_SETUP.md](OFFLINE_SETUP.md), [INSTALLATION_GUIDE.md](INSTALLATION_GUIDE.md), [DEVELOPER.md](DEVELOPER.md).
 
